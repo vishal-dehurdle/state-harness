@@ -52,8 +52,14 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         "StabilityViolation",
         m.py().get_type_bound::<StabilityViolation>(),
     )?;
-    m.add("BudgetExhausted", m.py().get_type_bound::<BudgetExhausted>())?;
-    m.add("PermanentFailure", m.py().get_type_bound::<PermanentFailure>())?;
+    m.add(
+        "BudgetExhausted",
+        m.py().get_type_bound::<BudgetExhausted>(),
+    )?;
+    m.add(
+        "PermanentFailure",
+        m.py().get_type_bound::<PermanentFailure>(),
+    )?;
 
     Ok(())
 }

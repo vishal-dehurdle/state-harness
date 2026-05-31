@@ -188,10 +188,7 @@ impl RGDecimator {
 
             let scored_len = scored.len();
             for msg in scored.iter_mut() {
-                if to_drop.contains(&msg.index)
-                    && msg.index != 0
-                    && msg.index != scored_len - 1
-                {
+                if to_drop.contains(&msg.index) && msg.index != 0 && msg.index != scored_len - 1 {
                     msg.retained = false;
                 }
             }
