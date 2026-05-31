@@ -50,10 +50,10 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // ── Custom exception classes ───────────────────────────────────────
     m.add(
         "StabilityViolation",
-        m.py().get_type::<StabilityViolation>(),
+        m.py().get_type_bound::<StabilityViolation>(),
     )?;
-    m.add("BudgetExhausted", m.py().get_type::<BudgetExhausted>())?;
-    m.add("PermanentFailure", m.py().get_type::<PermanentFailure>())?;
+    m.add("BudgetExhausted", m.py().get_type_bound::<BudgetExhausted>())?;
+    m.add("PermanentFailure", m.py().get_type_bound::<PermanentFailure>())?;
 
     Ok(())
 }
