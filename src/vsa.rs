@@ -152,12 +152,7 @@ impl HolographicEngine {
     ///     name: Unique identifier for this invariant.
     ///     key: Key vector (role identifier).
     ///     value: Value vector (safety constraint encoding).
-    fn register_invariant(
-        &mut self,
-        name: String,
-        key: Vec<i8>,
-        value: Vec<i8>,
-    ) -> PyResult<()> {
+    fn register_invariant(&mut self, name: String, key: Vec<i8>, value: Vec<i8>) -> PyResult<()> {
         self.validate_vec(&key, "key")?;
         self.validate_vec(&value, "value")?;
 
@@ -232,10 +227,9 @@ impl HolographicEngine {
             .invariants
             .get(name)
             .ok_or_else(|| PyValueError::new_err(format!("No invariant registered as '{name}'")))?;
-        let key = self
-            .keys
-            .get(name)
-            .ok_or_else(|| PyValueError::new_err(format!("No key stored for invariant '{name}'")))?;
+        let key = self.keys.get(name).ok_or_else(|| {
+            PyValueError::new_err(format!("No key stored for invariant '{name}'"))
+        })?;
         Ok(Self::bind_internal(invariant, key))
     }
 
@@ -287,10 +281,7 @@ impl HolographicEngine {
     ///
     /// Returns:
     ///     Dict mapping invariant name → cosine similarity.
-    fn check_all_drift(
-        &self,
-        context_vector: Vec<i8>,
-    ) -> PyResult<HashMap<String, f64>> {
+    fn check_all_drift(&self, context_vector: Vec<i8>) -> PyResult<HashMap<String, f64>> {
         self.validate_vec(&context_vector, "context_vector")?;
         Ok(self
             .invariants
@@ -362,12 +353,12 @@ impl HolographicEngine {
         a: PyReadonlyArray1<'py, i8>,
         b: PyReadonlyArray1<'py, i8>,
     ) -> PyResult<Bound<'py, PyArray1<i8>>> {
-        let a_slice = a.as_slice().map_err(|e| {
-            PyValueError::new_err(format!("Array 'a' is not contiguous: {e}"))
-        })?;
-        let b_slice = b.as_slice().map_err(|e| {
-            PyValueError::new_err(format!("Array 'b' is not contiguous: {e}"))
-        })?;
+        let a_slice = a
+            .as_slice()
+            .map_err(|e| PyValueError::new_err(format!("Array 'a' is not contiguous: {e}")))?;
+        let b_slice = b
+            .as_slice()
+            .map_err(|e| PyValueError::new_err(format!("Array 'b' is not contiguous: {e}")))?;
         self.validate_vec(a_slice, "a")?;
         self.validate_vec(b_slice, "b")?;
         let result = py.allow_threads(|| Self::bind_internal(a_slice, b_slice));
@@ -381,12 +372,12 @@ impl HolographicEngine {
         a: PyReadonlyArray1<'py, i8>,
         b: PyReadonlyArray1<'py, i8>,
     ) -> PyResult<f64> {
-        let a_slice = a.as_slice().map_err(|e| {
-            PyValueError::new_err(format!("Array 'a' is not contiguous: {e}"))
-        })?;
-        let b_slice = b.as_slice().map_err(|e| {
-            PyValueError::new_err(format!("Array 'b' is not contiguous: {e}"))
-        })?;
+        let a_slice = a
+            .as_slice()
+            .map_err(|e| PyValueError::new_err(format!("Array 'a' is not contiguous: {e}")))?;
+        let b_slice = b
+            .as_slice()
+            .map_err(|e| PyValueError::new_err(format!("Array 'b' is not contiguous: {e}")))?;
         self.validate_vec(a_slice, "a")?;
         self.validate_vec(b_slice, "b")?;
         Ok(py.allow_threads(|| Self::cosine_internal(a_slice, b_slice)))
@@ -399,9 +390,9 @@ impl HolographicEngine {
         target: PyReadonlyArray1<'py, i8>,
         candidates: Vec<Vec<i8>>,
     ) -> PyResult<Vec<f64>> {
-        let target_slice = target.as_slice().map_err(|e| {
-            PyValueError::new_err(format!("Array 'target' is not contiguous: {e}"))
-        })?;
+        let target_slice = target
+            .as_slice()
+            .map_err(|e| PyValueError::new_err(format!("Array 'target' is not contiguous: {e}")))?;
         self.validate_vec(target_slice, "target")?;
         for (i, c) in candidates.iter().enumerate() {
             self.validate_vec(c, &format!("candidates[{i}]"))?;
@@ -421,12 +412,12 @@ impl HolographicEngine {
         key_vector: PyReadonlyArray1<'py, i8>,
         value_vector: PyReadonlyArray1<'py, i8>,
     ) -> PyResult<()> {
-        let key_slice = key_vector.as_slice().map_err(|e| {
-            PyValueError::new_err(format!("key_vector is not contiguous: {e}"))
-        })?;
-        let val_slice = value_vector.as_slice().map_err(|e| {
-            PyValueError::new_err(format!("value_vector is not contiguous: {e}"))
-        })?;
+        let key_slice = key_vector
+            .as_slice()
+            .map_err(|e| PyValueError::new_err(format!("key_vector is not contiguous: {e}")))?;
+        let val_slice = value_vector
+            .as_slice()
+            .map_err(|e| PyValueError::new_err(format!("value_vector is not contiguous: {e}")))?;
         self.validate_vec(key_slice, "key_vector")?;
         self.validate_vec(val_slice, "value_vector")?;
         // Convert slices to owned Vecs for storage
@@ -440,13 +431,14 @@ impl HolographicEngine {
         name: &str,
         context_vector: PyReadonlyArray1<'py, i8>,
     ) -> PyResult<f64> {
-        let ctx_slice = context_vector.as_slice().map_err(|e| {
-            PyValueError::new_err(format!("context_vector is not contiguous: {e}"))
-        })?;
+        let ctx_slice = context_vector
+            .as_slice()
+            .map_err(|e| PyValueError::new_err(format!("context_vector is not contiguous: {e}")))?;
         self.validate_vec(ctx_slice, "context_vector")?;
-        let inv = self.invariants.get(name).ok_or_else(|| {
-            PyValueError::new_err(format!("No invariant named '{name}'"))
-        })?;
+        let inv = self
+            .invariants
+            .get(name)
+            .ok_or_else(|| PyValueError::new_err(format!("No invariant named '{name}'")))?;
         let inv_clone = inv.clone();
         Ok(py.allow_threads(move || Self::cosine_internal(&inv_clone, ctx_slice)))
     }
@@ -822,9 +814,7 @@ mod tests {
         for i in 0..MAX_INVARIANTS {
             let k = engine.generate_random_vector();
             let v = engine.generate_random_vector();
-            engine
-                .register_invariant(format!("inv_{i}"), k, v)
-                .unwrap();
+            engine.register_invariant(format!("inv_{i}"), k, v).unwrap();
         }
         let k = engine.generate_random_vector();
         let v = engine.generate_random_vector();
@@ -853,9 +843,7 @@ mod tests {
         let mut engine = make_engine(100);
         let k = engine.generate_random_vector();
         let v = engine.generate_random_vector();
-        engine
-            .register_invariant("temp".to_string(), k, v)
-            .unwrap();
+        engine.register_invariant("temp".to_string(), k, v).unwrap();
         assert_eq!(engine.invariant_count(), 1);
         assert!(engine.remove_invariant("temp"));
         assert_eq!(engine.invariant_count(), 0);
@@ -903,7 +891,8 @@ mod tests {
         // Similar texts should have higher cosine similarity than dissimilar texts
         let v_a = HolographicEngine::encode_text_internal("the quick brown fox jumps", 1000);
         let v_b = HolographicEngine::encode_text_internal("the quick brown fox leaps", 1000);
-        let v_c = HolographicEngine::encode_text_internal("database connection error timeout", 1000);
+        let v_c =
+            HolographicEngine::encode_text_internal("database connection error timeout", 1000);
 
         let sim_ab = HolographicEngine::cosine_internal(&v_a, &v_b);
         let sim_ac = HolographicEngine::cosine_internal(&v_a, &v_c);
@@ -973,7 +962,8 @@ mod tests {
         let mut core = VsaCore::<100>::new();
         let key = core.generate_random_vector();
         let val = core.generate_random_vector();
-        core.register_invariant("test", key.clone(), val.clone()).unwrap();
+        core.register_invariant("test", key.clone(), val.clone())
+            .unwrap();
         let recovered = core.recover("test").unwrap();
         assert_eq!(recovered, val);
     }

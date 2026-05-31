@@ -116,9 +116,7 @@ impl RGDecimator {
         structural_keywords: Option<Vec<String>>,
     ) -> PyResult<Self> {
         if !(0.0..=1.0).contains(&threshold) {
-            return Err(PyValueError::new_err(
-                "Threshold must be in [0.0, 1.0]",
-            ));
+            return Err(PyValueError::new_err("Threshold must be in [0.0, 1.0]"));
         }
         if max_retained == 0 {
             return Err(PyValueError::new_err("max_retained must be ≥ 1"));
@@ -179,7 +177,8 @@ impl RGDecimator {
                 .filter(|s| s.retained)
                 .map(|s| (s.index, s.score))
                 .collect();
-            retained_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            retained_scores
+                .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
             let to_drop: HashSet<usize> = retained_scores
                 .iter()
@@ -311,7 +310,8 @@ impl RGDecimator {
                 .filter(|s| s.retained)
                 .map(|s| (s.index, s.score))
                 .collect();
-            retained_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            retained_scores
+                .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
             let to_drop: HashSet<usize> = retained_scores
                 .iter()
@@ -351,11 +351,7 @@ impl RGDecimator {
     ///
     /// Replaces bigram Jaccard overlap with holographic vector cosine distance,
     /// integrating the VSA subsystem with the RG coarse-graining pipeline.
-    fn score_all_with_embeddings(
-        &self,
-        messages: &[String],
-        embeddings: &[Vec<i8>],
-    ) -> Vec<f64> {
+    fn score_all_with_embeddings(&self, messages: &[String], embeddings: &[Vec<i8>]) -> Vec<f64> {
         let mut scores = Vec::with_capacity(messages.len());
         for (i, msg) in messages.iter().enumerate() {
             let keyword_score = self.keyword_density(msg);
@@ -366,10 +362,7 @@ impl RGDecimator {
                 let lookback_start = i.saturating_sub(REDUNDANCY_LOOKBACK);
                 let mut max_sim = 0.0f64;
                 for j in lookback_start..i {
-                    let sim = HolographicEngine::cosine_internal(
-                        &embeddings[i],
-                        &embeddings[j],
-                    );
+                    let sim = HolographicEngine::cosine_internal(&embeddings[i], &embeddings[j]);
                     // Cosine of bipolar vectors is in [-1, 1]; map to [0, 1]
                     let normalized_sim = (sim + 1.0) / 2.0;
                     max_sim = max_sim.max(normalized_sim);
@@ -491,17 +484,50 @@ impl RGDecimator {
 fn default_structural_keywords() -> Vec<String> {
     [
         // Action verbs (tool invocations)
-        "execute", "create", "update", "delete", "insert", "query",
-        "deploy", "migrate", "validate", "transform", "invoke", "call",
+        "execute",
+        "create",
+        "update",
+        "delete",
+        "insert",
+        "query",
+        "deploy",
+        "migrate",
+        "validate",
+        "transform",
+        "invoke",
+        "call",
         // Error signals
-        "error", "failed", "exception", "timeout", "retry",
-        "rejected", "invalid", "violation", "denied", "abort", "crashed",
+        "error",
+        "failed",
+        "exception",
+        "timeout",
+        "retry",
+        "rejected",
+        "invalid",
+        "violation",
+        "denied",
+        "abort",
+        "crashed",
         // Tool/system signals
-        "tool_call", "function_call", "api_response", "result",
-        "observation", "action", "thought", "plan", "response",
+        "tool_call",
+        "function_call",
+        "api_response",
+        "result",
+        "observation",
+        "action",
+        "thought",
+        "plan",
+        "response",
         // State transitions
-        "completed", "started", "pending", "approved", "blocked",
-        "resolved", "committed", "rolled_back", "cancelled",
+        "completed",
+        "started",
+        "pending",
+        "approved",
+        "blocked",
+        "resolved",
+        "committed",
+        "rolled_back",
+        "cancelled",
     ]
     .iter()
     .map(|s| s.to_string())
@@ -574,7 +600,10 @@ mod tests {
         let msg = "execute query failed with error timeout retry";
         let density = dec.keyword_density(msg);
         // 6 out of 7 tokens are keywords
-        assert!(density > 0.7, "Expected high keyword density, got {density}");
+        assert!(
+            density > 0.7,
+            "Expected high keyword density, got {density}"
+        );
     }
 
     #[test]
@@ -592,7 +621,10 @@ mod tests {
     fn test_information_density_short() {
         let density = RGDecimator::information_density("ok");
         // Short messages get a low length factor (0.2)
-        assert!(density < 0.3, "Expected low info density for short message, got {density}");
+        assert!(
+            density < 0.3,
+            "Expected low info density for short message, got {density}"
+        );
     }
 
     #[test]
@@ -616,7 +648,10 @@ mod tests {
         let ctx_refs: Vec<&str> = context.iter().map(|s| s.as_ref()).collect();
         let penalty = RGDecimator::redundancy_penalty(msg, &ctx_refs);
         // Exact duplicate should have very high overlap
-        assert!(penalty > 0.9, "Expected high redundancy for duplicate, got {penalty}");
+        assert!(
+            penalty > 0.9,
+            "Expected high redundancy for duplicate, got {penalty}"
+        );
     }
 
     #[test]
@@ -625,7 +660,10 @@ mod tests {
         let context = vec!["execute database migration with schema validation"];
         let ctx_refs: Vec<&str> = context.iter().map(|s| s.as_ref()).collect();
         let penalty = RGDecimator::redundancy_penalty(msg, &ctx_refs);
-        assert!(penalty < 0.2, "Expected low redundancy for different messages, got {penalty}");
+        assert!(
+            penalty < 0.2,
+            "Expected low redundancy for different messages, got {penalty}"
+        );
     }
 
     #[test]
@@ -644,7 +682,10 @@ mod tests {
             "latest message".to_string(),
         ];
         let result = dec.decimate(messages);
-        assert!(result[0].retained, "First message should always be retained");
+        assert!(
+            result[0].retained,
+            "First message should always be retained"
+        );
         assert!(result[2].retained, "Last message should always be retained");
     }
 
@@ -655,8 +696,10 @@ mod tests {
             "System: You are a helpful assistant. Execute tool calls as needed.".to_string(),
             "ok".to_string(),
             "sure".to_string(),
-            "Tool call: execute query on database, validate results, check error status".to_string(),
-            "The migration completed with 3 errors and 42 rows transformed successfully".to_string(),
+            "Tool call: execute query on database, validate results, check error status"
+                .to_string(),
+            "The migration completed with 3 errors and 42 rows transformed successfully"
+                .to_string(),
         ];
         let compressed = dec.compress(messages.clone());
         // First and last are always retained
@@ -667,11 +710,11 @@ mod tests {
     #[test]
     fn test_score_message_standalone() {
         let dec = make_decimator();
-        let score = dec.score_message(
-            "execute query failed with timeout error",
-            None,
+        let score = dec.score_message("execute query failed with timeout error", None);
+        assert!(
+            score > 0.3,
+            "Keyword-rich message should score above threshold, got {score}"
         );
-        assert!(score > 0.3, "Keyword-rich message should score above threshold, got {score}");
     }
 
     #[test]
@@ -741,9 +784,7 @@ mod tests {
             .map(|m| HolographicEngine::encode_text_internal(m, dim))
             .collect();
 
-        let result = dec
-            .decimate_with_embeddings(messages, embeddings)
-            .unwrap();
+        let result = dec.decimate_with_embeddings(messages, embeddings).unwrap();
         assert!(result[0].retained, "First message must always be retained");
         assert!(result[2].retained, "Last message must always be retained");
     }
@@ -755,6 +796,9 @@ mod tests {
         let embeddings = vec![vec![1i8; 10]]; // wrong length
 
         let result = dec.decimate_with_embeddings(messages, embeddings);
-        assert!(result.is_err(), "Mismatched lengths should produce an error");
+        assert!(
+            result.is_err(),
+            "Mismatched lengths should produce an error"
+        );
     }
 }

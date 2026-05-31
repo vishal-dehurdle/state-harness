@@ -678,10 +678,22 @@ mod tests {
     fn test_stable_decreasing_energy() {
         let mut mon = make_monitor();
         // Decreasing token usage → ΔV < 0 → stable
-        assert!(matches!(mon.record_step(1000, 0), Ok(StabilityStatus::Stable)));
-        assert!(matches!(mon.record_step(800, 0), Ok(StabilityStatus::Stable)));
-        assert!(matches!(mon.record_step(600, 0), Ok(StabilityStatus::Stable)));
-        assert!(matches!(mon.record_step(400, 0), Ok(StabilityStatus::Stable)));
+        assert!(matches!(
+            mon.record_step(1000, 0),
+            Ok(StabilityStatus::Stable)
+        ));
+        assert!(matches!(
+            mon.record_step(800, 0),
+            Ok(StabilityStatus::Stable)
+        ));
+        assert!(matches!(
+            mon.record_step(600, 0),
+            Ok(StabilityStatus::Stable)
+        ));
+        assert!(matches!(
+            mon.record_step(400, 0),
+            Ok(StabilityStatus::Stable)
+        ));
     }
 
     #[test]
@@ -708,7 +720,7 @@ mod tests {
         let mut mon = make_monitor();
         mon.record_step(100, 0).unwrap();
         mon.record_step(200, 0).unwrap(); // warning
-        // Drop back down → resets consecutive counter
+                                          // Drop back down → resets consecutive counter
         let status = mon.record_step(50, 0).unwrap();
         assert_eq!(status, StabilityStatus::Stable);
         assert_eq!(mon.consecutive_warnings(), 0);
@@ -745,8 +757,8 @@ mod tests {
     fn test_transient_failure_increments_theta() {
         let mut mon = make_monitor();
         mon.record_step(100, 0).unwrap(); // V(0) = 100
-        // Transient failure: record_step(0, 1) → V(1) = 0 + 1.0 = 1.0
-        // ΔV = 1.0 - 100.0 = -99.0 < 0 → stable (energy dropped)
+                                          // Transient failure: record_step(0, 1) → V(1) = 0 + 1.0 = 1.0
+                                          // ΔV = 1.0 - 100.0 = -99.0 < 0 → stable (energy dropped)
         let status = mon.report_transient_failure().unwrap();
         assert_eq!(status, StabilityStatus::Stable);
     }
@@ -768,7 +780,7 @@ mod tests {
         mon.record_step(200, 0).unwrap();
         mon.record_step(300, 0).unwrap();
         let _ = mon.record_step(400, 0); // trips
-        // Subsequent steps should return Tripped
+                                         // Subsequent steps should return Tripped
         let status = mon.record_step(50, 0).unwrap();
         assert_eq!(status, StabilityStatus::Tripped);
     }
@@ -913,8 +925,8 @@ mod tests {
         group.add_child("a", 1.0, 3, None).unwrap();
         group.add_child("b", 2.0, 3, None).unwrap();
 
-        group.record_step("a", 100, 0).unwrap();  // V = 100
-        group.record_step("b", 200, 1).unwrap();  // V = 200 + 2*1 = 202
+        group.record_step("a", 100, 0).unwrap(); // V = 100
+        group.record_step("b", 200, 1).unwrap(); // V = 200 + 2*1 = 202
 
         let total = group.total_energy();
         assert!((total - 302.0).abs() < f64::EPSILON);
