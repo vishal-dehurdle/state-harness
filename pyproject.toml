@@ -1,0 +1,54 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "state-harness"
+version = "0.2.0"
+description = "Runtime safety layer for LLM agents. Detects token spirals, kills doomed tasks early, tells you why."
+readme = "README.md"
+license = { text = "BUSL-1.1 AND Apache-2.0" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Vishal Verma", email = "vishal.verma@dehurdle.com" },
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+keywords = [
+    "multi-agent",
+    "safety",
+    "lyapunov",
+    "token-spiral",
+    "circuit-breaker",
+    "agent-monitoring",
+    "cost-control",
+]
+
+[project.urls]
+Homepage = "https://github.com/vishal-dehurdle/state-harness"
+Repository = "https://github.com/vishal-dehurdle/state-harness"
+Issues = "https://github.com/vishal-dehurdle/state-harness/issues"
+Documentation = "https://vishalvermalabs.com/papers/empirical-lyapunov-stability-agent-failure"
+Changelog = "https://github.com/vishal-dehurdle/state-harness/blob/main/CHANGELOG.md"
+
+[project.optional-dependencies]
+numpy = ["numpy>=1.24"]
+langgraph = ["langgraph>=0.2"]
+dev = [
+    "pytest>=8.0",
+    "maturin>=1.5",
+]
+
+[tool.maturin]
+python-source = "python"
+module-name = "state_harness._core"
+features = ["pyo3/extension-module"]

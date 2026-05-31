@@ -1,0 +1,21 @@
+[package]
+name = "state-harness"
+version = "0.2.0"
+edition = "2021"
+license = "BUSL-1.1"
+description = "High-performance Rust compute engine for the state-harness semantic boundary layer"
+repository = "https://github.com/vishal-dehurdle/state-harness"
+
+[lib]
+name = "_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.21" }
+rand = { version = "0.8", features = ["small_rng"] }
+numpy = { version = "0.21", optional = true }
+
+[features]
+default = ["extension-module"]
+extension-module = ["pyo3/extension-module"]
+numpy = ["dep:numpy", "pyo3/multiple-pymethods"]

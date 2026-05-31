@@ -1,0 +1,59 @@
+diff --git a/moatless/runner/docker_runner.py b/moatless/runner/docker_runner.py
+index e7ba53b6..166d8afa 100644
+--- a/moatless/runner/docker_runner.py
++++ b/moatless/runner/docker_runner.py
+@@ -225,16 +225,23 @@ class DockerRunner(BaseRunner):
+                 redis_url = self._convert_localhost_url(os.environ.get("REDIS_URL"))
+                 env_vars.append(f"REDIS_URL={redis_url}")
+ 
+-            # Add API key environment variables from current environment
++            # Add API key and cloud credentials from current environment
+             for key, value in os.environ.items():
+                 if (
+                     key.endswith("API_KEY")
+                     or key.startswith("AWS_")
+                     or key.startswith("GCP_")
+                     or key.startswith("AZURE_")
++                    or key.startswith("VERTEXAI_")
++                    or key.startswith("GOOGLE_CLOUD_")
+                 ):
+                     env_vars.append(f"{key}={value}")
+ 
++            # Forward Google Application Credentials if set
++            google_creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
++            if google_creds:
++                env_vars.append(f"GOOGLE_APPLICATION_CREDENTIALS=/data/gcloud_creds.json")
++
+             # Add OpenTelemetry context if available
+             if otel_context:
+                 for key, value in otel_context.items():
+@@ -300,6 +307,11 @@ class DockerRunner(BaseRunner):
+                 cmd.extend(["-v", f"{self.moatless_source_dir}/pyproject.toml:/opt/moatless/pyproject.toml"])
+                 cmd.extend(["-e", "PYTHONPATH=/opt/moatless/moatless:$PYTHONPATH"])
+ 
++            # Mount Google Application Credentials file if set
++            google_creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
++            if google_creds and os.path.isfile(google_creds):
++                cmd.extend(["-v", f"{google_creds}:/data/gcloud_creds.json:ro"])
++
+             args = create_job_args(project_id, trajectory_id, job_func, node_id)
+             logger.info(f"Running command: {args}")
+ 
+diff --git a/scripts/docker_run.py b/scripts/docker_run.py
+index 426a7df3..428df756 100755
+--- a/scripts/docker_run.py
++++ b/scripts/docker_run.py
+@@ -209,8 +209,12 @@ def main():
+     args = parser.parse_args()
+ 
+     # Handle backward compatibility and validation
+-    model_id = args.model_id or args.model
+     litellm_model_name = args.litellm_model_name
++    # When litellm_model_name is set, don't use the default model as model_id
++    if litellm_model_name:
++        model_id = args.model_id  # None unless explicitly set
++    else:
++        model_id = args.model_id or args.model
+ 
+     if args.model_id and args.model != "gpt-4o-mini-2024-07-18":  # Default value check
+         print("Error: Cannot specify both --model and --model-id")

@@ -1,0 +1,16 @@
+{
+  "pythonVersion": "3.12",
+  "pythonPlatform": "Darwin",
+  "venvPath": ".",
+  "venv": ".venv",
+  "extraPaths": ["python"],
+  "executionEnvironments": [
+    {
+      "root": "python"
+    },
+    {
+      "root": "tests",
+      "extraPaths": ["python"]
+    }
+  ]
+}
