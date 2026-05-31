@@ -251,9 +251,45 @@ Agent Loop
 
 ---
 
-## Benchmarks (τ³-bench)
+## Benchmarks
 
-Evaluated on [τ³-bench](https://github.com/sierra-research/tau-bench) across airline, retail, and telecom domains (1,350 runs total, 3 trials each).
+Evaluated across three complementary benchmarks spanning customer service, software engineering, and multi-turn reasoning. Full methodology and data in the [research paper](https://vishalvermalabs.com/papers/empirical-lyapunov-stability-agent-failure).
+
+### Summary: Token savings scale with loop length
+
+| Benchmark | Avg Turns | Token Savings | Trip Rate | Pass-Rate Impact |
+|:---|:---|---:|---:|:---|
+| **MINT** (reasoning + coding) | 1–5 | 0.8% | 0% | None (29.2% → 28.5%) |
+| **τ³-bench** (customer service) | 3–10 | 9% | ~5% | None (58% preserved) |
+| **SWE-bench Verified** (coding) | 10–50 | 49.5% | 43% | 10/15 resolved preserved |
+
+**Key finding:** The monitor is non-invasive on short-loop agents (0–9% savings, zero false trips) and highly effective on long-loop agents where token spirals concentrate (49.5% savings, 68.8% precision).
+
+### SWE-bench Verified (central result)
+
+37 Django instances from SWE-bench Verified. Agent: moatless-tools SearchTree with 50-node budget. Model: Gemini 2.5 Flash.
+
+| Metric | Baseline | State-Harness (τ=3.0, W=5) |
+|:---|---:|---:|
+| Total tokens | 19,838,665 | 10,011,520 |
+| **Token savings** | — | **49.5%** |
+| Resolved | 15 / 37 | 10 / 37 |
+| **Precision** | — | **68.8%** |
+
+The worst spirals — failed tasks consuming 1.5–1.6M tokens — are terminated at 74–83% savings per task. The guard trips at a median of node 23 (~46% through the budget), early enough for substantial savings but late enough for calibration.
+
+**Threshold sensitivity (Pareto frontier):**
+
+| τ | W | Trips | Token Savings | Resolved Preserved | Precision |
+|:---|:---|---:|---:|---:|---:|
+| 1.5 | 3 | 32 | 83.1% | 3 / 15 | 62.5% |
+| 2.0 | 5 | 27 | 69.1% | 6 / 15 | 66.7% |
+| **3.0** | **5** | **16** | **49.5%** | **10 / 15** | **68.8%** |
+| 5.0 | 3 | 9 | 24.0% | 12 / 15 | 66.7% |
+
+### τ³-bench Airline
+
+50 tasks × 3 configurations. Agent handles airline reservations via tool calls.
 
 | Config | Pass Rate | Token Savings | Notes |
 |:---|---:|---:|:---|
@@ -261,7 +297,26 @@ Evaluated on [τ³-bench](https://github.com/sierra-research/tau-bench) across a
 | Naive Cap (100K) | 58% | 0% | No airline task exceeds cap |
 | **State-Harness** (τ=2.0) | **58%** | **9%** | Non-invasive: same pass rate, fewer tokens |
 
+The naive cap achieves 0% savings because no airline task exceeds 100K tokens — confirming that hard budget caps provide no value when set above the task's natural consumption envelope.
+
+### MINT (non-invasiveness validation)
+
+284 tasks across GSM8K (48), MATH (100), HumanEval (45), MBPP (91). Agent uses up to 5 turns per task.
+
+| Category | Baseline Success | Harness Success | Token Savings |
+|:---|---:|---:|---:|
+| reasoning/gsm8k | 91.7% | 91.7% | 3.0% |
+| reasoning/math | 39.0% | 37.0% | −0.3% |
+| coding/humaneval | 0.0% | 0.0% | 2.8% |
+| coding/mbpp | 0.0% | 0.0% | 0.4% |
+| **Total** | **29.2%** | **28.5%** | **0.8%** |
+
+Zero stability violations recorded. The monitor correctly identifies short-loop tasks as stable and does not intervene.
+
 ### Reproducing the benchmarks
+
+<details>
+<summary>τ³-bench reproduction steps</summary>
 
 ```bash
 # 1. Clone both repos
@@ -286,14 +341,9 @@ export VERTEXAI_LOCATION=asia-south1  # or your preferred region
 # 5. Run full benchmark
 cd ../state-harness
 ./benchmarks/run_full_benchmark.sh
-
-# 6. Run retail threshold sweep
-./benchmarks/rerun_retail.sh
 ```
 
-### Per-domain threshold tuning
-
-The growth-ratio threshold τ is calibrated per domain:
+**Per-domain threshold tuning:**
 
 | Domain | τ | Budget Gate | Rationale |
 |:---|:---|:---|:---|
@@ -301,13 +351,22 @@ The growth-ratio threshold τ is calibrated per domain:
 | **Retail** | **2.5** | **12,000** | Multi-item orders need more tokens per turn |
 | Telecom | 2.0 | 8,000 | Sequential workflows; similar to airline |
 
-Override via environment variable for sweep experiments:
+</details>
 
-```bash
-# Run with custom threshold
-HARNESS_RATIO_THRESHOLD=3.0 HARNESS_BUDGET_GATE=12000 \
-  uv run tau2 run --domain retail --agent harness_agent ...
-```
+See [benchmarks/](benchmarks/) for full setup, configs, and reproduction instructions for all three benchmarks.
+
+### Future evaluations
+
+- [ ] **Terminal-Bench** — Terminal-based agent tasks; tests command-line tool loops where spirals manifest as repeated failed commands
+- [ ] **SWE-bench Pro** — Harder, contamination-resistant variant of SWE-bench
+- [ ] **LiveCodeBench** — Freshly sampled coding problems with no training data overlap
+- [ ] **Cross-model validation** — GPT-4o, Claude Sonnet 4, Llama 4 to validate model-agnosticity
+
+### Planned features
+
+- [ ] Adaptive threshold — Auto-calibrate τ from warmup dynamics instead of fixed per-domain defaults
+- [ ] Causal intervention — Instead of killing spiraling tasks, redirect them (e.g., inject summary, reset context)
+- [ ] Streaming support — Real-time monitoring for streaming/voice agents
 
 ---
 
@@ -344,33 +403,6 @@ State-harness applies control theory to LLM agent execution:
 - **Lyapunov stability**: The energy function V(k) = S(k) + λθ(k) models token consumption as a dynamical system. When ΔV ≥ 0 for W consecutive steps, the system is provably unstable.
 - **Renormalization Group (RG) theory**: Message compression is modeled as coarse-graining — eliminating high-frequency noise while preserving scale-invariant task objectives.
 - **Vector Symbolic Architecture (VSA)**: Domain policies are bound to high-dimensional bipolar vectors (10,000-d, i8 space), enabling constant-time semantic drift detection outside the LLM context window.
-
----
-
-## Roadmap
-
-### Current evaluations
-
-- [x] **τ³-bench Airline** — Non-invasiveness validated: 58% pass rate preserved, 9% token savings
-- [x] **SWE-bench Verified** — 37 Django instances: 49.5% token savings at τ=3.0/W=5, 68.8% precision, 10/15 resolved preserved. Worst spirals (1.5M+ tokens) caught at 74–83% savings per task.
-- [x] **MINT** — 284 tasks across GSM8K/MATH/HumanEval/MBPP: 0.8% token savings, zero trips — non-invasiveness confirmed on short-loop tasks
-
-**Key finding:** Token savings scale with loop length (MINT 0.8% → τ³ 9% → SWE 49.5%). The monitor delivers maximum value on long-loop agents (coding, research, DevOps) and minimal overhead on short-loop agents (chat, Q&A).
-
-See [benchmarks/](benchmarks/) for full setup, configs, and reproduction instructions.
-
-### Future evaluations
-
-- [ ] **Terminal-Bench** — Terminal-based agent tasks; tests command-line tool loops where spirals manifest as repeated failed commands
-- [ ] **SWE-bench Pro** — Harder, contamination-resistant variant of SWE-bench
-- [ ] **LiveCodeBench** — Freshly sampled coding problems with no training data overlap
-- [ ] **Cross-model validation** — GPT-4o, Claude Sonnet 4, Llama 4 to validate model-agnosticity
-
-### Planned features
-
-- [ ] Adaptive threshold — Auto-calibrate τ from warmup dynamics instead of fixed per-domain defaults
-- [ ] Causal intervention — Instead of killing spiraling tasks, redirect them (e.g., inject summary, reset context)
-- [ ] Streaming support — Real-time monitoring for streaming/voice agents
 
 ---
 
