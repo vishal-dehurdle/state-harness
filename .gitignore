@@ -251,3 +251,11 @@ benchmark_overnight*.log
 # macOS
 .DS_Store
 **/.DS_Store
+
+# LaTeX / arXiv paper (managed via Overleaf)
+paper/
+*.aux
+*.bbl
+*.blg
+*.out
+*.synctex.gz
