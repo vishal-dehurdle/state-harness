@@ -247,3 +247,7 @@ Cargo.lock
 # Benchmark results (generated, large JSON files — re-run to reproduce)
 benchmark_results/
 benchmark_overnight*.log
+
+# macOS
+.DS_Store
+**/.DS_Store

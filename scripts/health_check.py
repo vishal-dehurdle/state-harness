@@ -5,9 +5,9 @@ import sys
 import os
 from pathlib import Path
 
-def check_results(results_dir: str, label: str = ""):
+def check_results(results_dir: str | os.PathLike, label: str = ""):
     """Check a benchmark results directory for errors."""
-    results_dir = Path(results_dir)
+    results_dir: Path = Path(results_dir)
     if not results_dir.exists():
         print(f"  [{label}] Dir not found: {results_dir}")
         return

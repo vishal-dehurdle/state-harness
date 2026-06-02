@@ -649,3 +649,287 @@ class TestEndToEndPipeline:
         # Cost was capped well below the theoretical unguarded spend
         unguarded_spend = sum(500 * (i + 1) for i in range(100))  # = 2,525,000
         assert total_spent < unguarded_spend * 0.01  # <1% of unguarded cost
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# LangGraph SafeGraph Adapter
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class _MockMessage:
+    """Mock LangGraph AIMessage with usage_metadata."""
+
+    def __init__(self, total_tokens: int, name: str = "llm"):
+        self.usage_metadata = {"total_tokens": total_tokens}
+        self.name = name
+
+
+class _MockGraph:
+    """Mock compiled LangGraph graph for testing SafeGraph."""
+
+    def __init__(self, messages: list[_MockMessage]):
+        self._messages = messages
+
+    def invoke(self, input: dict, config: dict = None, **kwargs) -> dict:
+        return {"messages": self._messages}
+
+    def stream(self, input: dict, config: dict = None, **kwargs):
+        for msg in self._messages:
+            yield {"messages": [msg]}
+
+
+class TestSafeGraph:
+    """Test the first-class LangGraph SafeGraph adapter."""
+
+    def test_invoke_extracts_tokens(self):
+        from state_harness.adapters import SafeGraph
+
+        messages = [
+            _MockMessage(1000, "llm"),
+            _MockMessage(500, "search"),
+        ]
+        graph = _MockGraph(messages)
+        safe = SafeGraph(graph, token_budget=100_000)
+
+        result = safe.invoke({"messages": [("user", "test")]})
+        assert result["messages"] == messages
+        assert safe.total_tokens == 1500
+        assert not safe.tripped
+
+    def test_invoke_generates_report(self):
+        from state_harness.adapters import SafeGraph
+
+        messages = [_MockMessage(100, "llm")]
+        graph = _MockGraph(messages)
+        safe = SafeGraph(graph, token_budget=100_000)
+
+        safe.invoke({"messages": [("user", "test")]})
+        report = safe.report
+        assert report is not None
+
+    def test_stream_extracts_tokens(self):
+        from state_harness.adapters import SafeGraph
+
+        messages = [
+            _MockMessage(1000, "llm"),
+            _MockMessage(2000, "llm"),
+        ]
+        graph = _MockGraph(messages)
+        safe = SafeGraph(graph, token_budget=100_000)
+
+        chunks = list(safe.stream({"messages": [("user", "test")]}))
+        assert len(chunks) == 2
+        assert safe.total_tokens == 3000
+
+    def test_budget_exhaustion_calls_on_trip(self):
+        from state_harness.adapters import SafeGraph
+
+        messages = [_MockMessage(60_000, "llm")]  # Over budget
+        graph = _MockGraph(messages)
+
+        trip_reports = []
+        safe = SafeGraph(
+            graph,
+            token_budget=50_000,
+            on_trip=lambda r: trip_reports.append(r),
+        )
+
+        with pytest.raises(BudgetExhausted):
+            safe.invoke({"messages": [("user", "test")]})
+
+    def test_monitor_graph_convenience(self):
+        from state_harness.adapters import monitor_graph
+
+        messages = [_MockMessage(100, "llm")]
+        graph = _MockGraph(messages)
+        safe = monitor_graph(graph, token_budget=100_000)
+
+        safe.invoke({"messages": [("user", "test")]})
+        assert safe.total_tokens == 100
+
+    def test_zero_token_messages_ignored(self):
+        from state_harness.adapters import SafeGraph
+
+        messages = [_MockMessage(0, "system")]  # Zero tokens
+        graph = _MockGraph(messages)
+        safe = SafeGraph(graph, token_budget=100_000)
+
+        safe.invoke({"messages": [("user", "test")]})
+        assert safe.total_tokens == 0
+
+    def test_extract_from_response_metadata(self):
+        """Test fallback to response_metadata format."""
+        from state_harness.adapters import SafeGraph
+
+        class OldFormatMessage:
+            usage_metadata = None
+            response_metadata = {"token_usage": {"total_tokens": 999}}
+            name = "llm"
+
+        graph = _MockGraph([OldFormatMessage()])
+        safe = SafeGraph(graph, token_budget=100_000)
+
+        safe.invoke({"messages": [("user", "test")]})
+        assert safe.total_tokens == 999
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CrewAI Callback Adapter
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class _MockStepOutput:
+    """Mock CrewAI step output."""
+
+    def __init__(self, total_tokens: int, tool: str = "search", error=None):
+        self.token_usage = {"total_tokens": total_tokens}
+        self.tool = tool
+        self.error = error
+
+
+class _MockTaskOutput:
+    """Mock CrewAI task output."""
+
+    def __init__(self, total_tokens: int):
+        self.token_usage = {"total_tokens": total_tokens}
+
+
+class TestCrewAICallback:
+    """Test the CrewAI callback adapter."""
+
+    def test_step_callback_records_tokens(self):
+        from state_harness.adapters import CrewAICallback
+
+        cb = CrewAICallback(token_budget=100_000)
+        cb.step_callback(_MockStepOutput(1000, "search"))
+        cb.step_callback(_MockStepOutput(500, "calculate"))
+
+        assert cb.guard.total_tokens == 1500
+        cb.close()
+
+    def test_task_callback_records_tokens(self):
+        from state_harness.adapters import CrewAICallback
+
+        cb = CrewAICallback(token_budget=100_000)
+        cb.task_callback(_MockTaskOutput(5000))
+
+        assert cb.guard.total_tokens == 5000
+        cb.close()
+
+    def test_report_generated(self):
+        from state_harness.adapters import CrewAICallback
+
+        cb = CrewAICallback(token_budget=100_000)
+        cb.step_callback(_MockStepOutput(1000))
+        report = cb.report
+        assert report is not None
+        cb.close()
+
+    def test_error_steps_counted(self):
+        from state_harness.adapters import CrewAICallback
+
+        cb = CrewAICallback(token_budget=100_000)
+        cb.step_callback(_MockStepOutput(1000, error="timeout"))
+        cb.close()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Structured Output (JSON, CSV, OTEL)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestStructuredOutput:
+    """Test JSON, CSV, and OTEL output methods."""
+
+    def _make_report(self):
+        """Create a FailureReport from a spiraling guard."""
+        from state_harness.diagnostics import FailureReport
+
+        guard = BoundaryGuard(token_budget=50_000, lambda_=1.0, window=3)
+        with guard:
+            guard.record_step(tokens_used=1000, errors=0)
+            guard.record_step(tokens_used=500, errors=0)
+        return FailureReport.from_guard(guard)
+
+    def test_to_json_returns_valid_json(self):
+        import json
+
+        report = self._make_report()
+        j = report.to_json()
+        parsed = json.loads(j)
+        assert parsed["pattern"] == "healthy_completion"
+        assert parsed["total_tokens"] == 1500
+        assert isinstance(parsed["suggestions"], list)
+
+    def test_to_json_compact(self):
+        report = self._make_report()
+        j = report.to_json(indent=None)
+        assert "\n" not in j  # compact, single line
+
+    def test_csv_header_matches_row_fields(self):
+        from state_harness.diagnostics import FailureReport
+
+        report = self._make_report()
+        header = FailureReport.csv_header()
+        row = report.to_csv_row()
+        assert header.count(",") == row.count(",")
+
+    def test_to_csv_row_parseable(self):
+        report = self._make_report()
+        row = report.to_csv_row()
+        fields = row.split(",")
+        assert fields[0] == "healthy_completion"
+        assert int(fields[2]) == 1500  # total_tokens
+
+    def test_to_otel_attributes_types(self):
+        report = self._make_report()
+        attrs = report.to_otel_attributes()
+
+        # All values must be OTEL-compatible primitives
+        for k, v in attrs.items():
+            assert isinstance(k, str)
+            assert isinstance(v, (str, int, float, bool)), f"{k}: {type(v)}"
+
+        # Required keys
+        assert "state_harness.pattern" in attrs
+        assert "state_harness.total_tokens" in attrs
+        assert attrs["state_harness.total_tokens"] == 1500
+
+    def test_to_otel_pattern_value(self):
+        report = self._make_report()
+        attrs = report.to_otel_attributes()
+        assert attrs["state_harness.pattern"] == "healthy_completion"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CLI
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestCLI:
+    """Test the CLI module."""
+
+    def test_simulate_command(self):
+        from state_harness.cli import main
+        import sys
+
+        old_argv = sys.argv
+        sys.argv = ["state-harness", "simulate", "1000", "500", "200"]
+        try:
+            code = main()
+            assert code == 0
+        finally:
+            sys.argv = old_argv
+
+    def test_version_command(self):
+        from state_harness.cli import main
+        import sys
+
+        old_argv = sys.argv
+        sys.argv = ["state-harness", "--version"]
+        try:
+            code = main()
+            assert code == 0
+        finally:
+            sys.argv = old_argv
+

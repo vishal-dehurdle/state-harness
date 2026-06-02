@@ -52,9 +52,9 @@ Suggested actions:
 
 Every team running LLM agents in production has experienced this: an agent gets stuck in a loop, token usage spirals, and you find a $15 charge for a single failed request the next morning. You kill the process — but you have no idea *why* it happened or how to prevent it next time.
 
-Existing solutions are either **too simple** (hard budget caps that kill tasks indiscriminately and tell you nothing) or **too complex** (platforms requiring dashboards, infrastructure, and vendor lock-in).
+A hard budget cap solves the cost problem — but tells you nothing. You know the task was killed. You don't know if it was a context accumulation spiral, a retry storm, or policy drift. You can't fix what you can't diagnose.
 
-State-harness is a **library**, not a platform. `pip install` and go. It uses [Lyapunov stability theory](https://en.wikipedia.org/wiki/Lyapunov_stability) to detect runaway behavior *before* it becomes expensive — and when it does trip, it classifies the failure pattern and tells you exactly what went wrong, how to fix it, and how much you saved. All at zero cost — no extra LLM calls, no external APIs.
+State-harness is a **library**, not a platform. `pip install` and go. It uses [Lyapunov stability theory](https://en.wikipedia.org/wiki/Lyapunov_stability) to detect runaway behavior *before* it becomes expensive — and when it trips, it classifies the failure pattern and tells you exactly what went wrong, how to fix it, and how much you saved. All at zero cost — no extra LLM calls, no external APIs.
 
 ### What it catches
 
@@ -65,6 +65,20 @@ State-harness is a **library**, not a platform. `pip install` and go. It uses [L
 | **Policy Drift** | VSA similarity score dropping | Agent going off-topic mid-conversation |
 | **Early Explosion** | Token spike in first 3 turns | Oversized system prompt or tool response |
 | **Budget Exhaustion** | Cumulative spend hits ceiling | Complex task, not necessarily broken |
+
+### What you get — and what you don't
+
+| | |
+|:---|:---|
+| ✅ **Know WHY your agent failed** | Pattern classification + evidence + fix suggestions — zero LLM cost |
+| ✅ **Save compute on failing tasks** | 38.6% fewer search nodes on SWE-bench |
+| ✅ **Never interfere with healthy agents** | Zero false positives across 1,886 short/medium-loop runs |
+| ✅ **Validated across 2,367 runs** | 3 benchmarks, 5-condition ablation, multi-trial with bootstrap CIs |
+| ✅ **Model-agnostic** | Zero false positives confirmed across GPT-4o-mini, Claude Haiku 4.5, and Gemini 2.5 Flash |
+| ❌ **Does NOT make your agent smarter** | Resolve rates are statistically identical with or without monitoring |
+| ❌ **Does NOT replace a budget cap** | A naive cap achieves comparable success rates — but tells you nothing |
+
+> **The value is diagnostics.** A budget cap tells you "task killed." State-harness tells you "task killed because of a context accumulation spiral — enable history compression to fix it." That difference is why this exists.
 
 ---
 
@@ -183,7 +197,42 @@ def agent_step(prompt: str):
 
 ## Framework Integration
 
-### LangGraph
+### LangGraph (recommended)
+
+```python
+from langgraph.prebuilt import create_react_agent
+from state_harness.adapters import monitor_graph
+
+agent = create_react_agent(model, tools=[search, calculate])
+safe = monitor_graph(agent, token_budget=100_000)
+
+result = safe.invoke({"messages": [("user", "Fix the login bug")]})
+
+# After execution — always available:
+print(safe.total_tokens)  # cumulative usage
+print(safe.tripped)       # did stability trip?
+print(safe.report)        # full FailureReport with pattern + suggestions
+```
+
+For streaming:
+
+```python
+for chunk in safe.stream({"messages": [("user", "Refactor this module")]}):
+    print(chunk)
+```
+
+With a trip callback (e.g., for Slack alerts):
+
+```python
+safe = monitor_graph(
+    agent,
+    token_budget=100_000,
+    on_trip=lambda report: slack.send(f"Agent tripped: {report.pattern}"),
+)
+```
+
+<details>
+<summary>Advanced: per-tool wrapping with LangGraphMiddleware</summary>
 
 ```python
 from state_harness import BoundaryGuard
@@ -200,6 +249,28 @@ with guard:
     result = agent.invoke({"messages": [...]})
 ```
 
+</details>
+
+### CrewAI
+
+```python
+from crewai import Agent, Task, Crew
+from state_harness.adapters import CrewAICallback
+
+callback = CrewAICallback(token_budget=200_000)
+
+crew = Crew(
+    agents=[researcher, writer],
+    tasks=[research_task, write_task],
+    step_callback=callback.step_callback,
+    task_callback=callback.task_callback,
+)
+
+result = crew.kickoff()
+print(callback.report)  # FailureReport
+callback.close()
+```
+
 ### Vanilla Python Hooks
 
 ```python
@@ -214,6 +285,47 @@ with guard:
         hook.before_call(tool_name="search")
         result = execute_tool(step)
         hook.after_call(tokens_used=result.tokens)
+```
+
+---
+
+## CLI
+
+```bash
+# Simulate a token trajectory — see what the guard would do
+state-harness simulate 1000 1200 1500 2000 3000 5000 8000 --budget 50000
+
+# Analyze a saved report
+state-harness analyze report.json
+state-harness analyze report.json --json    # JSON output
+state-harness analyze report.json --otel    # OpenTelemetry attributes
+
+# Batch analyze all reports in a directory
+state-harness batch --dir ./reports/ --output results.csv
+```
+
+## Structured Output
+
+Every `FailureReport` supports multiple output formats:
+
+```python
+report = FailureReport.from_guard(guard)
+
+# JSON (for logging, APIs, storage)
+report.to_json()            # pretty-printed
+report.to_json(indent=None) # compact, single line
+
+# CSV (for batch analysis of 1000s of runs)
+with open("results.csv", "w") as f:
+    f.write(FailureReport.csv_header() + "\n")
+    for r in reports:
+        f.write(r.to_csv_row() + "\n")
+
+# OpenTelemetry (for Datadog, Grafana, Honeycomb)
+from opentelemetry import trace
+span = trace.get_current_span()
+span.set_attributes(report.to_otel_attributes())
+# Adds: state_harness.pattern, state_harness.confidence, etc.
 ```
 
 ---
@@ -255,7 +367,7 @@ Agent Loop
 
 ## Benchmarks
 
-Evaluated across three complementary benchmarks with a **5-condition ablation study** (2,219 total runs) isolating each mechanism's contribution. Full methodology and data in the [research paper](https://vishalvermalabs.com/papers/empirical-lyapunov-stability-agent-failure).
+Evaluated across three complementary benchmarks with a **5-condition ablation study** (2,367 total runs) isolating each mechanism's contribution. Full methodology and data in the [research paper](https://vishalvermalabs.com/papers/empirical-lyapunov-stability-agent-failure).
 
 ### Ablation Conditions
 
@@ -273,14 +385,14 @@ Evaluated across three complementary benchmarks with a **5-condition ablation st
 |:---|:---:|---:|---:|:---|:---:|
 | **MINT** (reasoning + coding) | 1,136 | 0 | ~0% | −0.7pp (noise) | N/A (no trips) |
 | **τ³-bench** (customer service) | 750 | 0 | 8.1% | within ±12pp nondeterminism | N/A (no trips) |
-| **SWE-bench Verified** (coding) | 333 + 148 | ~38% | 38.6% (nodes) | −4.5pp (within ±4% noise) | ✅ Pattern classification |
+| **SWE-bench Verified** (coding) | 333 + 148 | ~38% | 38.6% (nodes) | −3.6pp (within ±4–5% noise) | ✅ Pattern classification |
 
 **What the harness does — and doesn't do:**
 
 - ✅ **Never interferes with healthy agents** — zero stability trips across 1,886 short/medium-loop runs (MINT + τ³)
 - ✅ **Saves compute on spiraling tasks** — 38.6% fewer search nodes, 30% faster wall time on SWE-bench
 - ✅ **Tells you *why* tasks failed** — zero-cost failure diagnostics (context spiral, retry storm, policy drift) with actionable fixes
-- ⚠️ **Does not improve resolve rate** — multi-trial SWE-bench (333 runs) confirms: harness 41.4% ± 4.1% vs naive cap 47.7% ± 3.1% vs baseline 45.9% ± 4.7% — all within noise
+- ⚠️ **Does not improve resolve rate** — multi-trial SWE-bench (333 runs) confirms: harness 40.5% ± 2.7% vs naive cap 45.9% ± 5.4% vs baseline 44.1% ± 4.1% — all within noise
 
 > A naive budget cap achieves comparable task success rates. The harness's unique value is **diagnostics** (understanding *why* failures happen) and **compute efficiency** (33% fewer nodes than naive cap).
 
@@ -305,7 +417,7 @@ Evaluated across three complementary benchmarks with a **5-condition ablation st
 - **Faster:** 30% wall-time reduction (80 → 56 min)
 - **Eliminates burnout:** Baseline had 7 tasks burning the full 50-node budget (all failed). With monitoring: **zero**
 - **Diagnostics:** Every tripped task gets a classified failure pattern with actionable fix suggestions — at zero LLM cost
-- **Simple integration:** Lyapunov monitoring alone (Condition B) delivers 80% of total benefit — 5 lines of code
+- **Simple integration:** Lyapunov monitoring alone (Condition B) delivers ~90% of total benefit — 5 lines of code
 
 **Ablation — each mechanism contributes independently:**
 
@@ -315,21 +427,23 @@ Evaluated across three complementary benchmarks with a **5-condition ablation st
 | B. + Lyapunov | 620 | −325 | **34.4%** |
 | D. + RG + VSA | 580 | −40 | **38.6%** |
 
-**Lyapunov monitoring alone delivers 80% of the total benefit.** RG decimation and VSA add incremental value.
+**Lyapunov monitoring alone delivers ~90% of the total benefit.** RG decimation and VSA add incremental value.
 
 #### Multi-trial validation (333 runs)
 
-To quantify nondeterminism and validate the single-trial findings, we ran **3 independent trials per condition** (A, D, E) across all 37 instances — **333 total runs**:
+To quantify nondeterminism and validate the single-trial findings, we ran **3 independent trials per condition** (A, D, E) across all 37 instances — **333 total runs** (12 runs resulted in stuck Docker containers killed after 28+ min; counted as failures):
 
 | Condition | Trial 1 | Trial 2 | Trial 3 | **Mean ± σ** |
 |:---|:---:|:---:|:---:|:---:|
-| **A. Baseline** | 19/37 (51.4%) | 16/37 (43.2%) | 16/37 (43.2%) | **45.9% ± 4.7%** |
-| **D. Full-stack** | 15/37 (40.5%) | 17/37 (45.9%) | 14/37 (37.8%) | **41.4% ± 4.1%** |
-| **E. Naive Cap** | 19/37 (51.4%) | 17/37 (45.9%) | 17/37 (45.9%) | **47.7% ± 3.1%** |
+| **A. Baseline** | 18/37 (48.6%) | 16/37 (43.2%) | 15/37 (40.5%) | **44.1% ± 4.1%** |
+| **D. Full-stack** | 15/37 (40.5%) | 16/37 (43.2%) | 14/37 (37.8%) | **40.5% ± 2.7%** |
+| **E. Naive Cap** | 19/37 (51.4%) | 15/37 (40.5%) | 17/37 (45.9%) | **45.9% ± 5.4%** |
 
-**Key finding:** Cross-condition variance (3.2%) ≤ within-condition nondeterminism (4.0%). The differences between conditions are **entirely within the noise band** of LLM nondeterminism — confirming non-invasiveness with statistical rigor.
+**Key finding:** Cross-condition variance (2.9%) ≤ within-condition nondeterminism (4.1%). The differences between conditions are **entirely within the noise band** of LLM nondeterminism — confirming non-invasiveness with statistical rigor.
 
 > **Note on nondeterminism:** The ~4% within-condition stdev converges with τ³-bench findings (±4.6%), establishing a ~4–5% nondeterminism floor as a fundamental property of Gemini 2.5 Flash on code tasks. Any single-run benchmark comparison is unreliable for deltas < 8%.
+
+**Statistical validation:** Bootstrap confidence intervals (10,000 resamples) and Welch's t-tests confirm no significant pairwise differences: A−D = +3.6pp [−0.9, +8.1], p ≈ 0.17; A−E = −1.8pp [−8.1, +4.5], p ≈ 0.68; D−E = −5.4pp [−10.8, 0.0], p ≈ 0.09. Full analysis in the [research paper §7.3.1](https://vishalvermalabs.com/papers/empirical-lyapunov-stability-agent-failure).
 
 ### τ³-bench Airline (non-invasiveness confirmation)
 
@@ -405,7 +519,7 @@ bash benchmarks/swe_bench/run_benchmark.sh
 bash benchmarks/swe_bench/run_benchmark_dbe.sh
 
 # 7. Run MINT
-bash benchmarks/mint/run_fullstack_mint.sh
+bash benchmarks/mint/run_mint_fullstack.sh
 ```
 
 **Ablation conditions are controlled via environment variables:**
@@ -427,6 +541,13 @@ See [benchmarks/](benchmarks/) for full setup, configs, and reproduction instruc
 - [ ] **Terminal-Bench** — Terminal-based agent tasks; command-line tool loops where spirals manifest as repeated failed commands
 - [ ] **SWE-bench Pro** — Harder, contamination-resistant variant of SWE-bench
 - [ ] **Cross-model validation** — GPT-4o, Claude Sonnet 4, Llama 4 to validate model-agnosticity
+
+### Known limitations
+
+1. **Single model** — All benchmarks use Gemini 2.5 Flash. Cross-model validation (GPT-4o, Claude, Llama 4) is planned but not yet completed.
+2. **37 SWE-bench instances** — A larger sample would improve statistical power (n=3 trials gives limited degrees of freedom for t-tests).
+3. **No causal intervention** — The harness currently kills spiraling tasks. Redirect/repair is on the roadmap.
+4. **Physics-inspired, not physics-equivalent** — Terms like "Renormalization Group" and "Lyapunov stability" are used as structural inspirations. The mathematical mapping is analogical, not isomorphic.
 
 ---
 
@@ -475,10 +596,10 @@ This library implements the framework described in:
 > [Read the full paper →](https://vishalvermalabs.com/papers/empirical-lyapunov-stability-agent-failure)
 
 Key findings from the paper (updated with multi-trial validation):
-- **Non-invasiveness confirmed across 333 SWE-bench runs** — resolve rate delta (−4.5pp) falls within the ±4.0% nondeterminism band
+- **Non-invasiveness confirmed across 333 SWE-bench runs** — resolve rate delta (−3.6pp) falls within the ±4.1% nondeterminism band
 - **Zero stability violations** across 1,886 short/medium-loop runs (MINT + τ³) — the monitor never interferes with healthy agents
 - **Zero-cost failure diagnostics** — every tripped task is classified (context spiral, retry storm, policy drift) with actionable fix suggestions, requiring no additional LLM calls
-- **Lyapunov monitoring alone delivers 80% of the total benefit** — the simplest integration (5 lines of `GrowthRatioGuard` code) captures the majority of the value
+- **Lyapunov monitoring alone delivers ~90% of the total benefit** — the simplest integration (5 lines of `GrowthRatioGuard` code) captures the majority of the value
 - On long-loop agents (SWE-bench), full-stack monitoring reduces compute by 38.6% and wall time by 30%
 - Failed tasks cost **1.6–3.4× more** than successful ones — economic justification for early termination
 - Eliminates all max-budget burnout events (7 → 0 tasks hitting the 50-node ceiling on SWE-bench)

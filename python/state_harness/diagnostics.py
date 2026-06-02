@@ -225,6 +225,120 @@ class FailureReport:
             "evidence": self.evidence,
         }
 
+    def to_json(self, indent: int = 2) -> str:
+        """Serialize to a JSON string.
+
+        Args:
+            indent: JSON indentation level (default: 2). Set to None for compact output.
+
+        Returns:
+            JSON string representation of the report.
+
+        Example::
+
+            report = FailureReport.from_guard(guard)
+            # Write to file
+            with open("report.json", "w") as f:
+                f.write(report.to_json())
+            # Compact for logging
+            logger.info(report.to_json(indent=None))
+        """
+        import json
+        return json.dumps(self.to_dict(), indent=indent)
+
+    @staticmethod
+    def csv_header() -> str:
+        """Return the CSV header row matching ``to_csv_row()`` output.
+
+        Example::
+
+            with open("results.csv", "w") as f:
+                f.write(FailureReport.csv_header() + "\\n")
+                for report in reports:
+                    f.write(report.to_csv_row() + "\\n")
+        """
+        return ",".join([
+            "pattern", "confidence", "total_tokens", "total_steps",
+            "is_tripped", "is_frozen", "baseline_tokens", "peak_ratio",
+            "cost_usd", "projected_cost_usd", "suggestion_count",
+        ])
+
+    def to_csv_row(self) -> str:
+        """Serialize to a single CSV row for batch analysis.
+
+        Returns:
+            Comma-separated values matching the ``csv_header()`` columns.
+
+        Example::
+
+            # Batch analyze 1000 runs
+            with open("batch_results.csv", "w") as f:
+                f.write(FailureReport.csv_header() + "\\n")
+                for guard_state in all_guards:
+                    report = FailureReport.from_guard(guard_state)
+                    f.write(report.to_csv_row() + "\\n")
+        """
+        return ",".join([
+            self.pattern.value,
+            f"{self.confidence:.2f}",
+            str(self.total_tokens),
+            str(self.total_steps),
+            str(self.is_tripped),
+            str(self.is_frozen),
+            f"{self.baseline_tokens:.0f}" if self.baseline_tokens else "",
+            f"{self.peak_ratio:.2f}" if self.peak_ratio else "",
+            f"{self.cost_estimate_usd:.6f}" if self.cost_estimate_usd else "",
+            f"{self.projected_cost_usd:.6f}" if self.projected_cost_usd else "",
+            str(len(self.suggestions)),
+        ])
+
+    def to_otel_attributes(self) -> dict[str, Union[str, int, float, bool]]:
+        """Export as OpenTelemetry span attributes for observability integration.
+
+        Attribute names follow the ``state_harness.*`` namespace convention.
+        All values are primitives (str, int, float, bool) as required by OTEL.
+
+        Example::
+
+            from opentelemetry import trace
+
+            report = FailureReport.from_guard(guard)
+            span = trace.get_current_span()
+            span.set_attributes(report.to_otel_attributes())
+
+        Or with the OTEL SDK directly::
+
+            tracer = trace.get_tracer("my-agent")
+            with tracer.start_as_current_span("agent_task") as span:
+                # ... run agent ...
+                report = FailureReport.from_guard(guard)
+                span.set_attributes(report.to_otel_attributes())
+        """
+        attrs: dict[str, Union[str, int, float, bool]] = {
+            "state_harness.pattern": self.pattern.value,
+            "state_harness.confidence": round(self.confidence, 3),
+            "state_harness.total_tokens": self.total_tokens,
+            "state_harness.total_steps": self.total_steps,
+            "state_harness.is_tripped": self.is_tripped,
+            "state_harness.is_frozen": self.is_frozen,
+        }
+
+        if self.baseline_tokens is not None:
+            attrs["state_harness.baseline_tokens"] = int(self.baseline_tokens)
+        if self.peak_ratio is not None:
+            attrs["state_harness.peak_ratio"] = round(self.peak_ratio, 2)
+        if self.cost_estimate_usd is not None:
+            attrs["state_harness.cost_usd"] = round(self.cost_estimate_usd, 6)
+        if self.projected_cost_usd is not None:
+            attrs["state_harness.projected_cost_usd"] = round(self.projected_cost_usd, 6)
+        if self.suggestions:
+            attrs["state_harness.top_suggestion"] = self.suggestions[0].action
+        if self.evidence:
+            # OTEL attributes must be primitives; join evidence into a single string
+            attrs["state_harness.evidence"] = " | ".join(self.evidence[:3])
+
+        return attrs
+
     def __str__(self) -> str:
         """Human-readable failure report for terminal output."""
         lines: list[str] = []
