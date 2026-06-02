@@ -80,6 +80,17 @@ State-harness is a **library**, not a platform. `pip install` and go. It uses [L
 
 > **The value is diagnostics.** A budget cap tells you "task killed." State-harness tells you "task killed because of a context accumulation spiral — enable history compression to fix it." That difference is why this exists.
 
+### Who should use this
+
+- **Teams running search-tree agents** (MCTS, beam search) — the architecture behind SWE-bench solvers and tools like Devin. Branches, not loops, drive cost. A per-branch iteration cap looks fine in isolation; the tree-level cost explosion happens silently.
+- **Platform teams running 1,000+ agent tasks/day** — manual trace inspection doesn't scale. State-harness classifies failure patterns at the edge (zero cost, no LLM calls) and exports them as OpenTelemetry attributes for aggregate analysis.
+- **Researchers benchmarking agents** — the nondeterminism floor (~4–5% stdev on Gemini 2.5 Flash) means single-run comparisons with <8% delta are noise. State-harness quantifies this.
+
+### Who should NOT use this
+
+- **Chatbots, RAG pipelines, or single-turn apps** — these don't spiral. You don't need monitoring.
+- **Simple ReAct loops with <10 turns** — `max_iterations=10` and a budget cap are sufficient. Every modern framework (LangGraph, CrewAI) supports this natively.
+
 ---
 
 ## Installation
