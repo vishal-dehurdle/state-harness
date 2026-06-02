@@ -334,28 +334,21 @@ span.set_attributes(report.to_otel_attributes())
 
 State-harness combines three physics-inspired mechanisms, implemented in Rust for microsecond-speed enforcement:
 
+```mermaid
+graph TD
+    A["Agent Loop"] --> B["GrowthRatioGuard\n(Python SDK)"]
+    B --> |"Normalizes tokens → growth ratio\nWarmup baseline · Budget gate"| C{" "}
+    C --> D["Lyapunov Monitor\nV(k) = S + λθ\nΔV ≥ 0?"]
+    C --> E["RG Decimator\nTF-IDF\nCompression"]
+    C --> F["Holographic Engine\n(VSA)\nDrift Detection"]
+    
+    style D fill:#1a1a1a,stroke:#555,color:#e8e8e8
+    style E fill:#1a1a1a,stroke:#555,color:#e8e8e8
+    style F fill:#1a1a1a,stroke:#555,color:#e8e8e8
+    style B fill:#0d1117,stroke:#30363d,color:#e6edf3
 ```
-Agent Loop
-    │
-    ▼
-┌─────────────────────────────────────────┐
-│  GrowthRatioGuard (Python SDK)          │
-│  ├── Normalizes tokens → growth ratio   │
-│  ├── Warmup baseline (first N turns)    │
-│  └── Budget gate (min spend before trip)│
-└──────────────┬──────────────────────────┘
-               │
-    ┌──────────┼──────────┐
-    ▼          ▼          ▼
-┌────────┐ ┌────────┐ ┌────────────┐
-│Lyapunov│ │  RG    │ │Holographic │
-│Monitor │ │Decim. │ │  Engine    │
-│        │ │        │ │   (VSA)    │
-│V(k)=S+λθ│ │TF-IDF │ │ Drift     │
-│ΔV ≥ 0? │ │Decim. │ │ Detection │
-└────────┘ └────────┘ └────────────┘
-   Rust        Rust        Rust
-```
+
+> All three mechanisms are implemented in Rust (via PyO3) for microsecond-speed enforcement.
 
 | Component | Purpose | Speed |
 |:---|:---|:---|
@@ -540,14 +533,13 @@ See [benchmarks/](benchmarks/) for full setup, configs, and reproduction instruc
 - [x] **Multi-trial SWE-bench** — 333 runs (3 trials × 3 conditions × 37 instances) confirming non-invasiveness within ±4% noise band
 - [ ] **Terminal-Bench** — Terminal-based agent tasks; command-line tool loops where spirals manifest as repeated failed commands
 - [ ] **SWE-bench Pro** — Harder, contamination-resistant variant of SWE-bench
-- [ ] **Cross-model validation** — GPT-4o, Claude Sonnet 4, Llama 4 to validate model-agnosticity
+- [x] **Cross-model validation** — GPT-4o-mini, Claude Haiku 4.5, Gemini 2.5 Flash: zero false positives, consistent guard behavior
 
 ### Known limitations
 
-1. **Single model** — All benchmarks use Gemini 2.5 Flash. Cross-model validation (GPT-4o, Claude, Llama 4) is planned but not yet completed.
-2. **37 SWE-bench instances** — A larger sample would improve statistical power (n=3 trials gives limited degrees of freedom for t-tests).
-3. **No causal intervention** — The harness currently kills spiraling tasks. Redirect/repair is on the roadmap.
-4. **Physics-inspired, not physics-equivalent** — Terms like "Renormalization Group" and "Lyapunov stability" are used as structural inspirations. The mathematical mapping is analogical, not isomorphic.
+1. **37 SWE-bench instances** — A larger sample would improve statistical power (n=3 trials gives limited degrees of freedom for t-tests).
+2. **No causal intervention** — The harness currently kills spiraling tasks. Redirect/repair is on the roadmap.
+3. **Physics-inspired, not physics-equivalent** — Terms like "Renormalization Group" and "Lyapunov stability" are used as structural inspirations. The mathematical mapping is analogical, not isomorphic.
 
 ---
 
