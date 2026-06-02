@@ -1,14 +1,21 @@
 #!/usr/bin/env bash
 # =============================================================================
-# SWE-bench Full-Stack Benchmark — Sequential, concurrency=1
+# SWE-bench Phases B, C, E — Supplemental to the A+D run
 # =============================================================================
 #
-# Runs baseline and harness modes sequentially, one instance at a time.
-# This avoids Docker pressure, rate limits, and disk issues.
+# Runs conditions:
+#   B = Lyapunov-only (harness monitoring, no adaptive RG)
+#   C = Lyapunov+RG   (harness monitoring, with adaptive RG — same as D since
+#                       VSA is not implemented in SWE-bench integration)
+#   E = Naive Cap      (hard 100K token budget, no monitoring)
+#
+# NOTE: C ≡ D for SWE-bench (no VSA in the moatless integration).
+#       We include C for completeness but its results should match Phase D.
 #
 # Prerequisites:
 #   - Docker/OrbStack running
 #   - MOATLESS_DIR, VERTEXAI vars set
+#   - Phases A + D already completed
 # =============================================================================
 
 set -euo pipefail
@@ -18,10 +25,10 @@ STATE_HARNESS_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 MOATLESS_DIR_PATH="${MOATLESS_DIR:-$(cd "$STATE_HARNESS_DIR/../moatless-tools" && pwd)/.moatless}"
 
 TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
-LOG_FILE="$STATE_HARNESS_DIR/benchmark_results/swe_bench_${TIMESTAMP}.log"
+LOG_FILE="$STATE_HARNESS_DIR/benchmark_results/swe_bench_bce_${TIMESTAMP}.log"
 mkdir -p "$(dirname "$LOG_FILE")"
 
-# 50 Django instances from SWE-bench verified_mini
+# Same 50 Django instances
 INSTANCES=(
     "django__django-11099" "django__django-11283" "django__django-11422"
     "django__django-11620" "django__django-11797" "django__django-11848"
@@ -43,10 +50,10 @@ INSTANCES=(
 )
 
 echo "═══════════════════════════════════════════════════════════" | tee "$LOG_FILE"
-echo "  SWE-bench FULL-STACK BENCHMARK"                           | tee -a "$LOG_FILE"
-echo "  Instances: ${#INSTANCES[@]}"                               | tee -a "$LOG_FILE"
-echo "  Concurrency: 1 (sequential)"                              | tee -a "$LOG_FILE"
-echo "  Started: $(date '+%Y-%m-%d %H:%M:%S %Z')"                | tee -a "$LOG_FILE"
+echo "  SWE-bench PHASES B, C, E"                                  | tee -a "$LOG_FILE"
+echo "  Instances: ${#INSTANCES[@]}"                                | tee -a "$LOG_FILE"
+echo "  Concurrency: 1 (sequential)"                               | tee -a "$LOG_FILE"
+echo "  Started: $(date '+%Y-%m-%d %H:%M:%S %Z')"                 | tee -a "$LOG_FILE"
 echo "═══════════════════════════════════════════════════════════" | tee -a "$LOG_FILE"
 
 run_instance() {
@@ -71,59 +78,48 @@ run_instance() {
     echo "  [$(date '+%H:%M:%S')] Done: $EVAL_NAME" | tee -a "$LOG_FILE"
 }
 
-# ── Phase 1: Baseline ────────────────────────────────────────
-echo "" | tee -a "$LOG_FILE"
-echo "──────────────────────────────────────────────────────────" | tee -a "$LOG_FILE"
-echo "[$(date '+%H:%M:%S')] Phase 1/2: Baseline (no monitoring)" | tee -a "$LOG_FILE"
-echo "──────────────────────────────────────────────────────────" | tee -a "$LOG_FILE"
+run_phase() {
+    local PHASE_NUM="$1"
+    local PHASE_LABEL="$2"
+    local EVAL_PREFIX="$3"
+    local FLOW="$4"
 
-PHASE1_START=$(date +%s)
-COMPLETED=0
-ERRORS=0
+    echo "" | tee -a "$LOG_FILE"
+    echo "──────────────────────────────────────────────────────────" | tee -a "$LOG_FILE"
+    echo "[$(date '+%H:%M:%S')] Phase $PHASE_NUM: $PHASE_LABEL" | tee -a "$LOG_FILE"
+    echo "──────────────────────────────────────────────────────────" | tee -a "$LOG_FILE"
 
-for instance in "${INSTANCES[@]}"; do
-    COMPLETED=$((COMPLETED + 1))
-    echo "  [$COMPLETED/${#INSTANCES[@]}]" | tee -a "$LOG_FILE"
-    if ! run_instance "swe_bl" "swebench_react" "$instance"; then
-        ERRORS=$((ERRORS + 1))
-        echo "  ⚠️  Error on $instance" | tee -a "$LOG_FILE"
-    fi
-    # Clean up Docker containers between runs to save disk
-    docker container prune -f > /dev/null 2>&1 || true
-done
+    local START=$(date +%s)
+    local COMPLETED=0
+    local ERRORS=0
 
-PHASE1_END=$(date +%s)
-PHASE1_MIN=$(( (PHASE1_END - PHASE1_START) / 60 ))
-echo "  → Baseline: ${#INSTANCES[@]} instances, $ERRORS errors, ${PHASE1_MIN}min" | tee -a "$LOG_FILE"
+    for instance in "${INSTANCES[@]}"; do
+        COMPLETED=$((COMPLETED + 1))
+        echo "  [$COMPLETED/${#INSTANCES[@]}]" | tee -a "$LOG_FILE"
+        if ! run_instance "$EVAL_PREFIX" "$FLOW" "$instance"; then
+            ERRORS=$((ERRORS + 1))
+            echo "  ⚠️  Error on $instance" | tee -a "$LOG_FILE"
+        fi
+        docker container prune -f > /dev/null 2>&1 || true
+    done
 
-# ── Phase 2: Harness ─────────────────────────────────────────
-echo "" | tee -a "$LOG_FILE"
-echo "──────────────────────────────────────────────────────────" | tee -a "$LOG_FILE"
-echo "[$(date '+%H:%M:%S')] Phase 2/2: Harness (with monitoring)" | tee -a "$LOG_FILE"
-echo "──────────────────────────────────────────────────────────" | tee -a "$LOG_FILE"
+    local END=$(date +%s)
+    local MINS=$(( (END - START) / 60 ))
+    echo "  → $PHASE_LABEL: ${#INSTANCES[@]} instances, $ERRORS errors, ${MINS}min" | tee -a "$LOG_FILE"
+}
 
-PHASE2_START=$(date +%s)
-COMPLETED=0
-ERRORS=0
+# ── Phase B: Lyapunov-only ───────────────────────────────────
+run_phase "B" "Lyapunov-only (no RG decimation)" "swe_ly" "swebench_harness_lyapunov"
 
-for instance in "${INSTANCES[@]}"; do
-    COMPLETED=$((COMPLETED + 1))
-    echo "  [$COMPLETED/${#INSTANCES[@]}]" | tee -a "$LOG_FILE"
-    if ! run_instance "swe_hr" "swebench_harness" "$instance"; then
-        ERRORS=$((ERRORS + 1))
-        echo "  ⚠️  Error on $instance" | tee -a "$LOG_FILE"
-    fi
-    docker container prune -f > /dev/null 2>&1 || true
-done
-
-PHASE2_END=$(date +%s)
-PHASE2_MIN=$(( (PHASE2_END - PHASE2_START) / 60 ))
-echo "  → Harness: ${#INSTANCES[@]} instances, $ERRORS errors, ${PHASE2_MIN}min" | tee -a "$LOG_FILE"
+# ── Phase E: Naive Cap ───────────────────────────────────────
+# Run E before C since C ≡ D (more useful data first)
+run_phase "E" "Naive Cap (hard 100K token budget)" "swe_nc" "swebench_naive_cap"
 
 # ── Summary ──────────────────────────────────────────────────
 echo "" | tee -a "$LOG_FILE"
 echo "═══════════════════════════════════════════════════════════" | tee -a "$LOG_FILE"
-echo "  SWE-bench BENCHMARK COMPLETE"                              | tee -a "$LOG_FILE"
+echo "  SWE-bench PHASES B, E COMPLETE"                            | tee -a "$LOG_FILE"
 echo "  Finished: $(date '+%Y-%m-%d %H:%M:%S %Z')"               | tee -a "$LOG_FILE"
-echo "  Baseline: ${PHASE1_MIN}min, Harness: ${PHASE2_MIN}min"   | tee -a "$LOG_FILE"
+echo "  Note: Phase C omitted (identical to Phase D for SWE-bench" | tee -a "$LOG_FILE"
+echo "        since VSA is not in the moatless integration)"       | tee -a "$LOG_FILE"
 echo "═══════════════════════════════════════════════════════════" | tee -a "$LOG_FILE"

@@ -58,7 +58,7 @@ def simulate_retry_storm():
             break
 
     # Force tripped state for demo
-    guard._tripped = True
+    guard._inner.is_tripped = True
     print(FailureReport.from_guard(guard, model="gemini-2.5-flash"))
 
 
@@ -84,7 +84,7 @@ def simulate_early_explosion():
         except StabilityViolation:
             break
 
-    guard._tripped = True
+    guard._inner.is_tripped = True
     print(FailureReport.from_guard(guard, model="gemini-2.5-flash"))
 
 

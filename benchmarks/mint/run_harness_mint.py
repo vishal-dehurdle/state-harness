@@ -191,12 +191,20 @@ def main(args):
 
     LOGGER.info(f"Harness config: {exp_config}")
 
-    # Modify output dir to indicate harness mode
+    # Modify output dir with condition suffix for unique directories
     original_output = exp_config["output_dir"]
+    suffix = args.condition_suffix or "harness"
     exp_config["output_dir"] = original_output.replace(
         "gemini-2.5-flash",
-        "gemini-2.5-flash-harness"
+        f"gemini-2.5-flash-{suffix}"
     )
+
+    # If --fresh, remove existing results to force rerun
+    if args.fresh:
+        output_path = os.path.join(exp_config["output_dir"], "results.jsonl")
+        if os.path.exists(output_path):
+            os.remove(output_path)
+            LOGGER.info(f"Cleared previous results: {output_path}")
 
     # Initialize tasks
     task_config = exp_config["task"]
@@ -264,6 +272,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("Run MINT with state-harness monitoring.")
     parser.add_argument("--exp_config", type=str, required=True)
     parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--condition-suffix", type=str, default=None,
+                        help="Suffix for output dir (e.g., A_baseline, B_lyapunov)")
+    parser.add_argument("--fresh", action="store_true",
+                        help="Clear previous results to force rerun")
     args = parser.parse_args()
     LOGGER.setLevel(logging.DEBUG if args.debug else logging.INFO)
     main(args)
+

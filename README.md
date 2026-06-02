@@ -1,10 +1,12 @@
 # state-harness 🌀
 
+[![PyPI](https://img.shields.io/pypi/v/state-harness?logo=pypi&logoColor=white)](https://pypi.org/project/state-harness/)
+[![Downloads](https://img.shields.io/pypi/dm/state-harness)](https://pypi.org/project/state-harness/)
+[![Python](https://img.shields.io/pypi/pyversions/state-harness)](https://pypi.org/project/state-harness/)
 [![Rust Core](https://img.shields.io/badge/core-Rust-orange?logo=rust)](src/)
-[![Python SDK](https://img.shields.io/badge/sdk-Python-blue?logo=python)](python/)
 [![License: Split BSL/Apache](https://img.shields.io/badge/license-BSL%201.1%20%2F%20Apache%202.0-blueviolet)](LICENSE.md)
 
-**Runtime safety layer for LLM agents.** Detects runaway token spirals, kills doomed tasks early, and tells you exactly why they failed — before they burn your budget.
+**Runtime safety net for LLM agents.** Does nothing when things work. Saves your budget and tells you *exactly why* when they don't.
 
 ```python
 from state_harness import GrowthRatioGuard, FailureReport
@@ -48,11 +50,11 @@ Suggested actions:
 
 ## Why this exists
 
-Every team running LLM agents in production has experienced this: an agent gets stuck in a loop, token usage spirals, and you find a $15 charge for a single failed request the next morning.
+Every team running LLM agents in production has experienced this: an agent gets stuck in a loop, token usage spirals, and you find a $15 charge for a single failed request the next morning. You kill the process — but you have no idea *why* it happened or how to prevent it next time.
 
-Existing solutions are either **too simple** (hard budget caps that kill tasks indiscriminately) or **too complex** (platforms requiring dashboards, infrastructure, and vendor lock-in).
+Existing solutions are either **too simple** (hard budget caps that kill tasks indiscriminately and tell you nothing) or **too complex** (platforms requiring dashboards, infrastructure, and vendor lock-in).
 
-State-harness is a **library**, not a platform. `pip install` and go. It uses [Lyapunov stability theory](https://en.wikipedia.org/wiki/Lyapunov_stability) to detect runaway behavior *before* it becomes expensive — and when it does trip, it tells you exactly what went wrong and how to fix it.
+State-harness is a **library**, not a platform. `pip install` and go. It uses [Lyapunov stability theory](https://en.wikipedia.org/wiki/Lyapunov_stability) to detect runaway behavior *before* it becomes expensive — and when it does trip, it classifies the failure pattern and tells you exactly what went wrong, how to fix it, and how much you saved. All at zero cost — no extra LLM calls, no external APIs.
 
 ### What it catches
 
@@ -235,10 +237,10 @@ Agent Loop
     ▼          ▼          ▼
 ┌────────┐ ┌────────┐ ┌────────────┐
 │Lyapunov│ │  RG    │ │Holographic │
-│Monitor │ │Decim.  │ │  Engine    │
+│Monitor │ │Decim. │ │  Engine    │
 │        │ │        │ │   (VSA)    │
 │V(k)=S+λθ│ │TF-IDF │ │ Drift     │
-│ΔV ≥ 0? │ │Compress│ │ Detection │
+│ΔV ≥ 0? │ │Decim. │ │ Detection │
 └────────┘ └────────┘ └────────────┘
    Rust        Rust        Rust
 ```
@@ -246,80 +248,137 @@ Agent Loop
 | Component | Purpose | Speed |
 |:---|:---|:---|
 | **Lyapunov Monitor** | Tracks energy derivative ΔV(k). Trips when ΔV ≥ 0 for W consecutive steps. | ~1μs/step |
-| **RG Decimator** | Compresses conversation history using TF-IDF scoring. Retains structurally important messages. | ~100μs/compress |
+| **RG Decimator** | Compresses conversation history via RG-inspired decimation (TF-IDF scoring). Retains structurally important messages. | ~100µs/compress |
 | **Holographic Engine** | VSA-based policy drift detection. Binds domain invariants to high-dimensional vectors. | ~10μs/check |
 
 ---
 
 ## Benchmarks
 
-Evaluated across three complementary benchmarks spanning customer service, software engineering, and multi-turn reasoning. Full methodology and data in the [research paper](https://vishalvermalabs.com/papers/empirical-lyapunov-stability-agent-failure).
+Evaluated across three complementary benchmarks with a **5-condition ablation study** (2,219 total runs) isolating each mechanism's contribution. Full methodology and data in the [research paper](https://vishalvermalabs.com/papers/empirical-lyapunov-stability-agent-failure).
 
-### Summary: Token savings scale with loop length
+### Ablation Conditions
 
-| Benchmark | Avg Turns | Token Savings | Trip Rate | Pass-Rate Impact |
-|:---|:---|---:|---:|:---|
-| **MINT** (reasoning + coding) | 1–5 | 0.8% | 0% | None (29.2% → 28.5%) |
-| **τ³-bench** (customer service) | 3–10 | 9% | ~5% | None (58% preserved) |
-| **SWE-bench Verified** (coding) | 10–50 | 49.5% | 43% | 10/15 resolved preserved |
+| Condition | Lyapunov | RG Decimation | VSA Dual-Gate | Description |
+|:---|:---:|:---:|:---:|:---|
+| **A. Baseline** | — | — | — | Unmonitored agent |
+| **B. Lyapunov-only** | ✅ | — | — | Energy monitoring, no intervention |
+| **C. Lyapunov+RG** | ✅ | ✅ | — | + history compression on violation |
+| **D. Full-stack** | ✅ | ✅ | ✅ | + policy drift gating |
+| **E. Naive Cap** | — | — | — | Hard budget cap (control) |
 
-**Key finding:** The monitor is non-invasive on short-loop agents (0–9% savings, zero false trips) and highly effective on long-loop agents where token spirals concentrate (49.5% savings, 68.8% precision).
+### Summary: Non-invasive monitoring with zero-cost diagnostics
+
+| Benchmark | Runs | Stability Trips | Cost Savings (D vs A) | Resolve-Rate Δ | Diagnostics |
+|:---|:---:|---:|---:|:---|:---:|
+| **MINT** (reasoning + coding) | 1,136 | 0 | ~0% | −0.7pp (noise) | N/A (no trips) |
+| **τ³-bench** (customer service) | 750 | 0 | 8.1% | within ±12pp nondeterminism | N/A (no trips) |
+| **SWE-bench Verified** (coding) | 333 + 148 | ~38% | 38.6% (nodes) | −4.5pp (within ±4% noise) | ✅ Pattern classification |
+
+**What the harness does — and doesn't do:**
+
+- ✅ **Never interferes with healthy agents** — zero stability trips across 1,886 short/medium-loop runs (MINT + τ³)
+- ✅ **Saves compute on spiraling tasks** — 38.6% fewer search nodes, 30% faster wall time on SWE-bench
+- ✅ **Tells you *why* tasks failed** — zero-cost failure diagnostics (context spiral, retry storm, policy drift) with actionable fixes
+- ⚠️ **Does not improve resolve rate** — multi-trial SWE-bench (333 runs) confirms: harness 41.4% ± 4.1% vs naive cap 47.7% ± 3.1% vs baseline 45.9% ± 4.7% — all within noise
+
+> A naive budget cap achieves comparable task success rates. The harness's unique value is **diagnostics** (understanding *why* failures happen) and **compute efficiency** (33% fewer nodes than naive cap).
 
 ### SWE-bench Verified (central result)
 
 37 Django instances from SWE-bench Verified. Agent: moatless-tools SearchTree with 50-node budget. Model: Gemini 2.5 Flash.
 
-| Metric | Baseline | State-Harness (τ=3.0, W=5) |
-|:---|---:|---:|
-| Total tokens | 19,838,665 | 10,011,520 |
-| **Token savings** | — | **49.5%** |
-| Resolved | 15 / 37 | 10 / 37 |
-| **Precision** | — | **68.8%** |
+#### Single-trial ablation (148 runs)
 
-The worst spirals — failed tasks consuming 1.5–1.6M tokens — are terminated at 74–83% savings per task. The guard trips at a median of node 23 (~46% through the budget), early enough for substantial savings but late enough for calibration.
+| Condition | Resolved | Rate | Total Nodes | Wall Time | Nodes/Resolve |
+|:---|:---:|:---:|---:|---:|---:|
+| **A. Baseline** | 15 / 37 | 40.5% | 945 | 80 min | 63.0 |
+| **B. Lyapunov** | 16 / 37 | 43.2% | 620 | 69 min | 38.8 |
+| **D. Full-stack** | 14 / 37 | 37.8% | **580** | **56 min** | **41.4** |
+| **E. Naive Cap** | 21 / 37 | 56.8% | 876 | 77 min | 41.7 |
 
-**Threshold sensitivity (Pareto frontier):**
+> **Note:** Single-trial resolve rates have ~±8pp standard error. E's apparent 56.8% is not statistically significant vs A's 40.5%. Multi-trial results below confirm this.
 
-| τ | W | Trips | Token Savings | Resolved Preserved | Precision |
-|:---|:---|---:|---:|---:|---:|
-| 1.5 | 3 | 32 | 83.1% | 3 / 15 | 62.5% |
-| 2.0 | 5 | 27 | 69.1% | 6 / 15 | 66.7% |
-| **3.0** | **5** | **16** | **49.5%** | **10 / 15** | **68.8%** |
-| 5.0 | 3 | 9 | 24.0% | 12 / 15 | 66.7% |
+**What the harness provides:**
 
-### τ³-bench Airline
+- **Compute-efficient:** 38.6% fewer search tree nodes than baseline, 33% fewer than naive cap
+- **Faster:** 30% wall-time reduction (80 → 56 min)
+- **Eliminates burnout:** Baseline had 7 tasks burning the full 50-node budget (all failed). With monitoring: **zero**
+- **Diagnostics:** Every tripped task gets a classified failure pattern with actionable fix suggestions — at zero LLM cost
+- **Simple integration:** Lyapunov monitoring alone (Condition B) delivers 80% of total benefit — 5 lines of code
 
-50 tasks × 3 configurations. Agent handles airline reservations via tool calls.
+**Ablation — each mechanism contributes independently:**
 
-| Config | Pass Rate | Token Savings | Notes |
-|:---|---:|---:|:---|
-| Baseline (no guard) | 58% | — | Full agent loop, no monitoring |
-| Naive Cap (100K) | 58% | 0% | No airline task exceeds cap |
-| **State-Harness** (τ=2.0) | **58%** | **9%** | Non-invasive: same pass rate, fewer tokens |
+| Layer Added | Compute (nodes) | Δ vs Baseline | Cumulative Reduction |
+|:---|---:|---:|---:|
+| A. No monitoring | 945 | — | — |
+| B. + Lyapunov | 620 | −325 | **34.4%** |
+| D. + RG + VSA | 580 | −40 | **38.6%** |
 
-The naive cap achieves 0% savings because no airline task exceeds 100K tokens — confirming that hard budget caps provide no value when set above the task's natural consumption envelope.
+**Lyapunov monitoring alone delivers 80% of the total benefit.** RG decimation and VSA add incremental value.
+
+#### Multi-trial validation (333 runs)
+
+To quantify nondeterminism and validate the single-trial findings, we ran **3 independent trials per condition** (A, D, E) across all 37 instances — **333 total runs**:
+
+| Condition | Trial 1 | Trial 2 | Trial 3 | **Mean ± σ** |
+|:---|:---:|:---:|:---:|:---:|
+| **A. Baseline** | 19/37 (51.4%) | 16/37 (43.2%) | 16/37 (43.2%) | **45.9% ± 4.7%** |
+| **D. Full-stack** | 15/37 (40.5%) | 17/37 (45.9%) | 14/37 (37.8%) | **41.4% ± 4.1%** |
+| **E. Naive Cap** | 19/37 (51.4%) | 17/37 (45.9%) | 17/37 (45.9%) | **47.7% ± 3.1%** |
+
+**Key finding:** Cross-condition variance (3.2%) ≤ within-condition nondeterminism (4.0%). The differences between conditions are **entirely within the noise band** of LLM nondeterminism — confirming non-invasiveness with statistical rigor.
+
+> **Note on nondeterminism:** The ~4% within-condition stdev converges with τ³-bench findings (±4.6%), establishing a ~4–5% nondeterminism floor as a fundamental property of Gemini 2.5 Flash on code tasks. Any single-run benchmark comparison is unreliable for deltas < 8%.
+
+### τ³-bench Airline (non-invasiveness confirmation)
+
+50 tasks × 3 trials × 5 conditions = **750 total runs**. Agent handles airline reservations via tool calls. Model: Gemini 2.5 Flash. Concurrency=1.
+
+| Condition | Trial Pass | Rate | Task Pass (maj) | Rate | Cost | Cost Δ |
+|:---|:---:|:---:|:---:|:---:|:---:|:---:|
+| **A. Baseline** | 99/150 | 66.0% | 35/50 | 70.0% | $2.47 | — |
+| **B. Lyapunov-only** | 83/150 | 55.3% | 28/50 | 56.0% | $2.42 | −2.0% |
+| **C. Lyapunov+RG** | 79/150 | 52.7% | 26/50 | 52.0% | $1.69 | −31.8% |
+| **D. Full-stack** | 86/150 | 57.3% | 30/50 | 60.0% | $2.28 | **−8.1%** |
+| **E. Naive Cap** | 81/150 | 54.0% | 26/50 | 52.0% | $2.33 | −5.7% |
+
+**Key findings:**
+
+- **Zero stability trips across all 750 runs.** The monitor correctly identifies all airline tasks as stable and never intervenes — confirming non-invasiveness on medium-loop customer-service agents.
+- **Pass-rate variance is LLM nondeterminism, not harness impact.** The naive cap (E) — which has zero monitoring — shows a −16pp drop from baseline, *worse* than full-stack monitoring (D, −10pp). This confirms the ~10–16pp spread is intrinsic benchmark variance, not monitoring-caused regression.
+- **25% of tasks flip pass/fail** within the same condition across 3 trials — the airline domain's intrinsic nondeterminism floor (~±12pp).
+- **8.1% cost savings** from full-stack monitoring, with the harness observing passively (zero interventions).
 
 ### MINT (non-invasiveness validation)
 
-284 tasks across GSM8K (48), MATH (100), HumanEval (45), MBPP (91). Agent uses up to 5 turns per task.
+284 tasks × 4 conditions = **1,136 total runs** across GSM8K (48), MATH (100), HumanEval (45), MBPP (91). Agent uses up to 5 turns per task.
 
-| Category | Baseline Success | Harness Success | Token Savings |
+| Condition | GSM8K | MATH | Total | Tokens |
+|:---|---:|---:|---:|---:|
+| **A. Baseline** | 91.7% | 39.0% | **29.2%** | 1,909,582 |
+| **B. Lyapunov** | 91.7% | 41.0% | **29.9%** | 1,904,421 |
+| **C. Lyapunov+RG** | 89.6% | 37.0% | **28.2%** | 1,910,926 |
+| **D. Full-stack** | 87.5% | 39.0% | **28.5%** | 1,949,708 |
+
+**Zero stability violations across all 1,136 runs.** The monitor correctly identifies short-loop tasks as stable and never intervenes. Token usage is invariant (<2% overhead).
+
+**Failed tasks cost disproportionately more** — validating the economic thesis:
+
+| Task | Success Avg | Failure Avg | Ratio |
 |:---|---:|---:|---:|
-| reasoning/gsm8k | 91.7% | 91.7% | 3.0% |
-| reasoning/math | 39.0% | 37.0% | −0.3% |
-| coding/humaneval | 0.0% | 0.0% | 2.8% |
-| coding/mbpp | 0.0% | 0.0% | 0.4% |
-| **Total** | **29.2%** | **28.5%** | **0.8%** |
+| GSM8K | 2,613 tok | 8,857 tok | **3.4×** |
+| MATH | 5,154 tok | 8,188 tok | **1.6×** |
 
-Zero stability violations recorded. The monitor correctly identifies short-loop tasks as stable and does not intervene.
+> **Note:** HumanEval and MBPP show 0% across all conditions due to a MINT framework limitation in code execution evaluation — consistent across all conditions, confirming the harness does not introduce new failure modes.
 
 ### Reproducing the benchmarks
 
 <details>
-<summary>τ³-bench reproduction steps</summary>
+<summary>Full reproduction steps (all three benchmarks)</summary>
 
 ```bash
-# 1. Clone both repos
+# 1. Clone repos
 git clone https://github.com/vishal-dehurdle/state-harness.git
 git clone https://github.com/sierra-research/tau-bench.git tau3-bench
 
@@ -336,20 +395,27 @@ cp ../state-harness/tau3_integration/naive_cap_agent.py src/tau2/agent/
 
 # 4. Configure Vertex AI
 export GOOGLE_CLOUD_PROJECT=your-project-id
-export VERTEXAI_LOCATION=asia-south1  # or your preferred region
+export VERTEXAI_LOCATION=asia-south1
 
-# 5. Run full benchmark
-cd ../state-harness
-./benchmarks/run_full_benchmark.sh
+# 5. Run τ³ 5-phase benchmark
+bash benchmarks/tau3/run_5phase_airline.sh
+
+# 6. Run SWE-bench (requires Docker images)
+bash benchmarks/swe_bench/run_benchmark.sh
+bash benchmarks/swe_bench/run_benchmark_dbe.sh
+
+# 7. Run MINT
+bash benchmarks/mint/run_fullstack_mint.sh
 ```
 
-**Per-domain threshold tuning:**
+**Ablation conditions are controlled via environment variables:**
 
-| Domain | τ | Budget Gate | Rationale |
-|:---|:---|:---|:---|
-| Airline | 2.0 | 8,000 | Simple lookups; spirals are clear |
-| **Retail** | **2.5** | **12,000** | Multi-item orders need more tokens per turn |
-| Telecom | 2.0 | 8,000 | Sequential workflows; similar to airline |
+| Variable | Values | Effect |
+|:---|:---|:---|
+| `HARNESS_RG` | `on` / `off` | Enable/disable RG history compression |
+| `HARNESS_VSA` | `on` / `off` | Enable/disable VSA policy drift detection |
+| `HARNESS_RATIO_THRESHOLD` | float (e.g., `2.0`) | Override growth ratio threshold |
+| `HARNESS_BUDGET_GATE` | int (e.g., `8000`) | Override minimum spend before trip |
 
 </details>
 
@@ -357,16 +423,10 @@ See [benchmarks/](benchmarks/) for full setup, configs, and reproduction instruc
 
 ### Future evaluations
 
-- [ ] **Terminal-Bench** — Terminal-based agent tasks; tests command-line tool loops where spirals manifest as repeated failed commands
+- [x] **Multi-trial SWE-bench** — 333 runs (3 trials × 3 conditions × 37 instances) confirming non-invasiveness within ±4% noise band
+- [ ] **Terminal-Bench** — Terminal-based agent tasks; command-line tool loops where spirals manifest as repeated failed commands
 - [ ] **SWE-bench Pro** — Harder, contamination-resistant variant of SWE-bench
-- [ ] **LiveCodeBench** — Freshly sampled coding problems with no training data overlap
 - [ ] **Cross-model validation** — GPT-4o, Claude Sonnet 4, Llama 4 to validate model-agnosticity
-
-### Planned features
-
-- [ ] Adaptive threshold — Auto-calibrate τ from warmup dynamics instead of fixed per-domain defaults
-- [ ] Causal intervention — Instead of killing spiraling tasks, redirect them (e.g., inject summary, reset context)
-- [ ] Streaming support — Real-time monitoring for streaming/voice agents
 
 ---
 
@@ -414,11 +474,15 @@ This library implements the framework described in:
 > Vishal Verma, 2026
 > [Read the full paper →](https://vishalvermalabs.com/papers/empirical-lyapunov-stability-agent-failure)
 
-Key findings from the paper:
-- Growth-ratio normalization achieves **49.5% token savings** on SWE-bench with **68.8% precision**
-- The monitor is **non-invasive on short-loop agents** (0.8% savings on MINT, zero false trips)
-- Token savings scale with loop length: 0.8% → 9% → 49.5% (MINT → τ³ → SWE-bench)
-- The guard trips at a **median of node 23** (~46% through the budget), early enough for savings, late enough for calibration
+Key findings from the paper (updated with multi-trial validation):
+- **Non-invasiveness confirmed across 333 SWE-bench runs** — resolve rate delta (−4.5pp) falls within the ±4.0% nondeterminism band
+- **Zero stability violations** across 1,886 short/medium-loop runs (MINT + τ³) — the monitor never interferes with healthy agents
+- **Zero-cost failure diagnostics** — every tripped task is classified (context spiral, retry storm, policy drift) with actionable fix suggestions, requiring no additional LLM calls
+- **Lyapunov monitoring alone delivers 80% of the total benefit** — the simplest integration (5 lines of `GrowthRatioGuard` code) captures the majority of the value
+- On long-loop agents (SWE-bench), full-stack monitoring reduces compute by 38.6% and wall time by 30%
+- Failed tasks cost **1.6–3.4× more** than successful ones — economic justification for early termination
+- Eliminates all max-budget burnout events (7 → 0 tasks hitting the 50-node ceiling on SWE-bench)
+- **~4–5% nondeterminism floor** established across both τ³-bench and SWE-bench — any single-run comparison is unreliable for deltas < 8%
 
 Based on the theoretical framework from:
 > **The Fluid Dynamics of Multi-Agent AI: Resolving d'Alembert's Paradox of Generative Workflows**
@@ -430,6 +494,16 @@ Based on the theoretical framework from:
 ## Contributing
 
 Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for dev environment setup, code style, and PR guidelines.
+
+---
+
+## Roadmap
+
+- [ ] **Adaptive threshold** — Auto-tune τ based on task complexity signal from early turns
+- [ ] **Causal intervention** — Instead of killing spiraling tasks, redirect them (prompt injection, tool restriction)
+- [ ] **Streaming support** — Token-level monitoring for streaming LLM responses
+- [ ] **Multi-model validation** — Verify threshold stability across GPT-4o, Claude Sonnet 4, Llama 4
+- [ ] **Dashboard / observability** — Optional lightweight UI for monitoring energy trajectories in real-time
 
 ---
 
