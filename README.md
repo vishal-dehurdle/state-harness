@@ -73,8 +73,8 @@ State-harness is a **library**, not a platform. `pip install` and go. It uses [L
 | ✅ **Know WHY your agent failed** | Pattern classification + evidence + fix suggestions — zero LLM cost |
 | ✅ **Save compute on failing tasks** | 38.6% fewer search nodes on SWE-bench |
 | ✅ **Never interfere with healthy agents** | Zero false positives across 1,886 short/medium-loop runs |
-| ✅ **Validated across 2,367 runs** | 3 benchmarks, 5-condition ablation, multi-trial with bootstrap CIs |
-| ✅ **Model-agnostic** | Zero false positives confirmed across GPT-4o-mini, Claude Haiku 4.5, and Gemini 2.5 Flash |
+| ✅ **Validated across 3,175 runs** | 4 benchmarks, 5-condition ablation, multi-trial with bootstrap CIs |
+| ✅ **Model-agnostic** | Zero false positives confirmed across 7 models: GPT-4o-mini, Claude Haiku 4.5, Gemini 2.5 Flash + Llama 3.2:3B, Phi-4-Mini, Qwen3:4B, Gemma4:E4B (Ollama) |
 | ❌ **Does NOT make your agent smarter** | Resolve rates are statistically identical with or without monitoring |
 | ❌ **Does NOT replace a budget cap** | A naive cap achieves comparable success rates — but tells you nothing |
 
@@ -371,7 +371,7 @@ graph TD
 
 ## Benchmarks
 
-Evaluated across three complementary benchmarks with a **5-condition ablation study** (2,367 total runs) isolating each mechanism's contribution. Full methodology and data in the [research paper](https://vishalvermalabs.com/papers/empirical-lyapunov-stability-agent-failure).
+Evaluated across four complementary benchmarks with a **5-condition ablation study** (3,175 total runs) isolating each mechanism's contribution. Full methodology and data in the [research paper](https://vishalvermalabs.com/papers/empirical-lyapunov-stability-agent-failure).
 
 ### Ablation Conditions
 
@@ -390,6 +390,8 @@ Evaluated across three complementary benchmarks with a **5-condition ablation st
 | **MINT** (reasoning + coding) | 1,136 | 0 | ~0% | −0.7pp (noise) | N/A (no trips) |
 | **τ³-bench** (customer service) | 750 | 0 | 8.1% | within ±12pp nondeterminism | N/A (no trips) |
 | **SWE-bench Verified** (coding) | 333 + 148 | ~38% | 38.6% (nodes) | −3.6pp (within ±4–5% noise) | ✅ Pattern classification |
+| **Custom Local** (4 models) | 240 | 3 (true pos.) | 15.2% | 0pp | ✅ Pattern classification |
+| **MINT Local** (Qwen3:4B) | 568 | 0 | ~0% | +1.8pp | N/A (no trips) |
 
 **What the harness does — and doesn't do:**
 
@@ -490,6 +492,41 @@ To quantify nondeterminism and validate the single-trial findings, we ran **3 in
 
 > **Note:** HumanEval and MBPP show 0% across all conditions due to a MINT framework limitation in code execution evaluation — consistent across all conditions, confirming the harness does not introduce new failure modes.
 
+### Local Model Validation (edge deployment)
+
+20 custom tasks (5 easy, 10 medium, 5 hard) × 4 models × 3 conditions = **240 runs**. Hardware: Apple M4 MacBook Pro, 16 GB RAM, Ollama local inference.
+
+| Model | Size | Baseline | Harness | Naive Cap | Token Savings | FP |
+|:---|:---|:---|:---|:---|:---|:---|
+| **Llama 3.2:3B** | 2.0 GB | 45% | 45% | 60% | 1.2% | 0 |
+| **Phi-4-Mini** | 2.5 GB | 30% | 30% | 40% | 20.7% | 0 |
+| **Qwen3:4B** | 2.5 GB | 30% | 30% | 40% | 0.9% | 0 |
+| **Gemma4:E4B** | 9.6 GB | 35% | 35% | 70% | 37.9% | 0 |
+
+**Key findings:**
+
+- **Zero false positives across all 80 harness runs** — 4 model families, 3 difficulty tiers. The growth-ratio metric generalizes across architectures without threshold retuning.
+- **Small-model self-sabotage:** Naive cap outperforms baseline by +17.5pp on average (median +12.5pp). Small models solve early turns correctly but destroy solutions in later turns. Strongest on Gemma4:E4B (+35pp).
+- **Model-family behavioral signatures:**
+  - *Llama 3.2:3B:* Classic spirals (ratios: 2.3×, 5.9×, 7.6×) — 3 true-positive trips
+  - *Phi-4-Mini:* Spike-and-recover — 20.7% passive savings
+  - *Qwen3:4B:* 255K tokens but flat ratios (≤1.06×) — correctly classified as stable despite 3× volume
+  - *Gemma4:E4B:* Decreasing ratios — 37.9% passive savings, zero trips
+
+> **Practical takeaway:** If you’re deploying ≤4B models via Ollama, state-harness works out of the box with zero false positives. The self-sabotage finding suggests you should also add a turn limit (2–3 turns) for open-ended code generation tasks.
+
+#### MINT on Qwen3:4B (568 runs)
+
+| Task | Harness (max=5) | Naive Cap (max=2) | Δ |
+|:---|:---|:---|:---|
+| GSM8K | 37.5% | 27.1% | +10.4pp |
+| MATH | 0.0% | 0.0% | — |
+| HumanEval | 11.1% | 11.1% | — |
+| MBPP | 14.3% | 14.3% | — |
+| **Total** | **12.7%** | **10.9%** | **+1.8pp** |
+
+Zero harness interventions across all 284 tasks. On MINT’s short-loop tasks (max 5 turns), the harness monitoring window (W=3) **cannot trigger** within the available post-warmup turns — a structural guarantee, not a probabilistic observation.
+
 ### Reproducing the benchmarks
 
 <details>
@@ -542,15 +579,17 @@ See [benchmarks/](benchmarks/) for full setup, configs, and reproduction instruc
 ### Future evaluations
 
 - [x] **Multi-trial SWE-bench** — 333 runs (3 trials × 3 conditions × 37 instances) confirming non-invasiveness within ±4% noise band
+- [x] **Local model validation** — 240 runs across 4 open-weight models (Llama, Phi, Qwen, Gemma) + 568 MINT runs on Qwen3:4B
 - [ ] **Terminal-Bench** — Terminal-based agent tasks; command-line tool loops where spirals manifest as repeated failed commands
 - [ ] **SWE-bench Pro** — Harder, contamination-resistant variant of SWE-bench
-- [x] **Cross-model validation** — GPT-4o-mini, Claude Haiku 4.5, Gemini 2.5 Flash: zero false positives, consistent guard behavior
+- [x] **Cross-model validation** — 7 models total: GPT-4o-mini, Claude Haiku 4.5, Gemini 2.5 Flash + Llama 3.2:3B, Phi-4-Mini, Qwen3:4B, Gemma4:E4B
 
 ### Known limitations
 
 1. **37 SWE-bench instances** — A larger sample would improve statistical power (n=3 trials gives limited degrees of freedom for t-tests).
 2. **No causal intervention** — The harness currently kills spiraling tasks. Redirect/repair is on the roadmap.
 3. **Physics-inspired, not physics-equivalent** — Terms like "Renormalization Group" and "Lyapunov stability" are used as structural inspirations. The mathematical mapping is analogical, not isomorphic.
+4. **Custom benchmark scale** — The 20-task local battery is smaller than standard benchmarks. The self-sabotage finding (mean +17.5pp, median +12.5pp) is consistent across 4 models but requires larger-scale replication.
 
 ---
 
@@ -598,15 +637,17 @@ This library implements the framework described in:
 > Vishal Verma, 2026
 > [Read the full paper →](https://vishalvermalabs.com/papers/empirical-lyapunov-stability-agent-failure)
 
-Key findings from the paper (updated with multi-trial validation):
+Key findings from the paper (updated with multi-trial and local model validation):
 - **Non-invasiveness confirmed across 333 SWE-bench runs** — resolve rate delta (−3.6pp) falls within the ±4.1% nondeterminism band
-- **Zero stability violations** across 1,886 short/medium-loop runs (MINT + τ³) — the monitor never interferes with healthy agents
+- **Zero stability violations** across 1,886 short/medium-loop cloud runs (MINT + τ³) — the monitor never interferes with healthy agents
+- **Zero false positives across 80 local-model harness runs** — spanning Llama 3.2:3B, Phi-4-Mini, Qwen3:4B, Gemma4:E4B on Apple M4 via Ollama
 - **Zero-cost failure diagnostics** — every tripped task is classified (context spiral, retry storm, policy drift) with actionable fix suggestions, requiring no additional LLM calls
 - **Lyapunov monitoring alone delivers ~90% of the total benefit** — the simplest integration (5 lines of `GrowthRatioGuard` code) captures the majority of the value
 - On long-loop agents (SWE-bench), full-stack monitoring reduces compute by 38.6% and wall time by 30%
 - Failed tasks cost **1.6–3.4× more** than successful ones — economic justification for early termination
 - Eliminates all max-budget burnout events (7 → 0 tasks hitting the 50-node ceiling on SWE-bench)
 - **~4–5% nondeterminism floor** established across both τ³-bench and SWE-bench — any single-run comparison is unreliable for deltas < 8%
+- **Small-model self-sabotage**: Naive turn-limiting outperforms unconstrained baselines by +17.5pp on average on ≤4B models — runtime governance is capability-preserving, not just cost-saving
 
 Based on the theoretical framework from:
 > **The Fluid Dynamics of Multi-Agent AI: Resolving d'Alembert's Paradox of Generative Workflows**
@@ -626,7 +667,7 @@ Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for dev enviro
 - [ ] **Adaptive threshold** — Auto-tune τ based on task complexity signal from early turns
 - [ ] **Causal intervention** — Instead of killing spiraling tasks, redirect them (prompt injection, tool restriction)
 - [ ] **Streaming support** — Token-level monitoring for streaming LLM responses
-- [ ] **Multi-model validation** — Verify threshold stability across GPT-4o, Claude Sonnet 4, Llama 4
+- [x] **Multi-model validation** — 7 models validated: GPT-4o-mini, Claude Haiku 4.5, Gemini 2.5 Flash + 4 local models via Ollama
 - [ ] **Dashboard / observability** — Optional lightweight UI for monitoring energy trajectories in real-time
 
 ---

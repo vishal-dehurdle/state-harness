@@ -19,8 +19,8 @@ via tool calls while interacting with a simulated user.
 where spirals are rare. We expect ≈0% pass-rate loss with ≈9% token savings.
 
 ```bash
-cd benchmarks/
-./run_domain_airline.sh
+cd benchmarks/tau3/
+./run_5phase_airline.sh
 ```
 
 ### 2. SWE-bench (Software Engineering)
@@ -51,7 +51,27 @@ cd benchmarks/mint/
 ./run_mint.sh --mode both   # Run baseline + harness
 ```
 
-### 4. AgentBench (Skipped — requires 16GB+ extra RAM)
+### 4. Custom Local Model Battery (Ollama)
+**What**: Baseline/harness/naive-cap comparison across 4 open-weight models
+(Llama 3.2:3B, Phi-4-Mini, Qwen3:4B, Gemma4:E4B) running locally via Ollama.
+Covers both τ³-bench (airline domain) and MINT (reasoning + coding) tasks.
+
+**Why**: Validates that state-harness works on **consumer hardware** with
+**small models** that exhibit qualitatively different failure patterns than
+cloud APIs — self-sabotage from naive caps is amplified (+17.5pp vs baseline).
+
+**Prerequisites**:
+- [Ollama](https://ollama.com) installed and running
+- Models pulled: `ollama pull llama3.2:3b phi4-mini qwen3:4b gemma3:4b`
+
+```bash
+cd benchmarks/local_models/
+./setup_local.sh                 # One-time setup (installs Python deps)
+python run_local_benchmark.py    # Run full battery (≈6-8 hours)
+python analyze_local_results.py  # Analyze results
+```
+
+### 5. AgentBench (Skipped — requires 16GB+ extra RAM)
 **What**: Long-horizon agent tasks across OS, DB, WebShop, KnowledgeGraph.
 Requires 16GB RAM for WebShop alone + 30GB Freebase download for KnowledgeGraph.
 Not practical on machines with ≤16GB RAM.
@@ -94,24 +114,43 @@ EOF
 benchmarks/
 ├── README.md                    ← This file
 ├── analyze_results.py           ← τ³-bench results analyzer
-├── run_domain_airline.sh        ← τ³-bench airline runner
+├── analyze_fullstack.py         ← Full-stack cross-benchmark analyzer
+├── cross_model_smoke_test.py    ← Quick smoke test across model families
+├── run_fullstack_benchmark.sh   ← Run all benchmarks end-to-end
+├── tau3/
+│   └── run_5phase_airline.sh    ← τ³-bench 5-phase airline runner
 ├── swe_bench/
 │   ├── setup.sh                 ← One-time SWE-bench environment setup
 │   ├── run_benchmark.sh         ← SWE-bench benchmark runner
+│   ├── run_benchmark_bce.sh     ← Budget-ceiling-only variant
+│   ├── run_benchmark_dbe.sh     ← Drift-based-early variant
+│   ├── run_multi_trial.sh       ← Multi-trial runner for stdev measurement
 │   ├── harness_loop.py          ← HarnessSearchTree integration
 │   ├── docker_run.patch         ← Patches for moatless docker_run.py
 │   └── flow_configs/
 │       ├── swebench_baseline.json
 │       └── swebench_harness.json
-└── mint/
-    ├── setup_mint.sh            ← One-time MINT environment setup
-    ├── run_mint.sh              ← MINT benchmark runner
-    ├── mint_harness.py          ← Harness wrapper for MINT interactive loop
-    └── configs/
-        ├── gemini_baseline_reasoning_gsm8k.json
-        ├── gemini_baseline_reasoning_math.json
-        ├── gemini_baseline_coding_humaneval.json
-        └── gemini_baseline_coding_mbpp.json
+├── mint/
+│   ├── setup_mint.sh            ← One-time MINT environment setup
+│   ├── run_mint.sh              ← MINT benchmark runner
+│   ├── run_mint_fullstack.sh    ← Full-stack MINT runner
+│   ├── gemini_agent.py          ← Gemini agent for MINT tasks
+│   ├── gemini_feedback_agent.py ← Gemini feedback agent
+│   ├── mint_harness.py          ← Harness wrapper for MINT interactive loop
+│   ├── run_harness_mint.py      ← Harness-mode MINT runner
+│   └── configs/
+│       ├── gemini_baseline_reasoning_gsm8k.json
+│       ├── gemini_baseline_reasoning_math.json
+│       ├── gemini_baseline_coding_humaneval.json
+│       └── gemini_baseline_coding_mbpp.json
+└── local_models/
+    ├── setup_local.sh           ← One-time Ollama + deps setup
+    ├── run_local_benchmark.py   ← Main local model benchmark runner
+    ├── analyze_local_results.py ← Results analyzer for local runs
+    ├── tasks.py                 ← Task definitions for local benchmarks
+    ├── run_tau3_local.sh        ← τ³-bench runner for local models
+    ├── run_mint_local.sh        ← MINT runner for local models
+    └── run_mint_naive_cap.sh    ← MINT naive-cap runner for local models
 ```
 
 ---
