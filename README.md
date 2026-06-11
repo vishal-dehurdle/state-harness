@@ -6,7 +6,7 @@
 [![Rust Core](https://img.shields.io/badge/core-Rust-orange?logo=rust)](src/)
 [![License: Split BSL/Apache](https://img.shields.io/badge/license-BSL%201.1%20%2F%20Apache%202.0-blueviolet)](LICENSE.md)
 
-**Runtime safety net for LLM agents.** Does nothing when things work. Saves your budget and tells you *exactly why* when they don't.
+Lyapunov-stability monitor for multi-turn LLM agents. Detects token spirals, classifies failure patterns, and tells you why a task failed — no extra LLM calls.
 
 ```python
 from state_harness import GrowthRatioGuard, FailureReport
@@ -50,11 +50,11 @@ Suggested actions:
 
 ## Why this exists
 
-Every team running LLM agents in production has experienced this: an agent gets stuck in a loop, token usage spirals, and you find a $15 charge for a single failed request the next morning. You kill the process — but you have no idea *why* it happened or how to prevent it next time.
+Production multi-agent systems fail at rates between 41% and 87% ([Kore.ai 2026](https://kore.ai)). When an agent spirals — replaying full context each turn, retrying a broken tool call, or drifting off-task — a hard budget cap will eventually kill it. But the cap tells you nothing about *why* it failed, so you can't prevent recurrence.
 
-A hard budget cap solves the cost problem — but tells you nothing. You know the task was killed. You don't know if it was a context accumulation spiral, a retry storm, or policy drift. You can't fix what you can't diagnose.
+State-harness monitors token consumption relative to a per-task warmup baseline using a [Lyapunov energy function](https://en.wikipedia.org/wiki/Lyapunov_stability). When the growth ratio exceeds a threshold for W consecutive steps, the monitor trips and classifies the failure pattern (context spiral, retry storm, policy drift) with fix suggestions. The classification runs on the energy trajectory alone — no additional LLM calls, no external APIs.
 
-State-harness is a **library**, not a platform. `pip install` and go. It uses [Lyapunov stability theory](https://en.wikipedia.org/wiki/Lyapunov_stability) to detect runaway behavior *before* it becomes expensive — and when it trips, it classifies the failure pattern and tells you exactly what went wrong, how to fix it, and how much you saved. All at zero cost — no extra LLM calls, no external APIs.
+It's a library, not a platform. `pip install state-harness` and wrap your agent loop.
 
 ### What it catches
 
@@ -66,30 +66,22 @@ State-harness is a **library**, not a platform. `pip install` and go. It uses [L
 | **Early Explosion** | Token spike in first 3 turns | Oversized system prompt or tool response |
 | **Budget Exhaustion** | Cumulative spend hits ceiling | Complex task, not necessarily broken |
 
-### What you get — and what you don't
+### Scope and limitations
 
-| | |
-|:---|:---|
-| ✅ **Know WHY your agent failed** | Pattern classification + evidence + fix suggestions — zero LLM cost |
-| ✅ **Save compute on failing tasks** | 38.6% fewer search nodes on SWE-bench |
-| ✅ **Never interfere with healthy agents** | Zero false positives across 1,886 short/medium-loop runs |
-| ✅ **Validated across 3,175 runs** | 4 benchmarks, 5-condition ablation, multi-trial with bootstrap CIs |
-| ✅ **Model-agnostic** | Zero false positives confirmed across 7 models: GPT-4o-mini, Claude Haiku 4.5, Gemini 2.5 Flash + Llama 3.2:3B, Phi-4-Mini, Qwen3:4B, Gemma4:E4B (Ollama) |
-| ❌ **Does NOT make your agent smarter** | Resolve rates are statistically identical with or without monitoring |
-| ❌ **Does NOT replace a budget cap** | A naive cap achieves comparable success rates — but tells you nothing |
+State-harness does not improve agent resolve rates. A naive budget cap achieves comparable task success ([multi-trial results below](#multi-trial-validation-333-runs)). The value is in two things:
 
-> **The value is diagnostics.** A budget cap tells you "task killed." State-harness tells you "task killed because of a context accumulation spiral — enable history compression to fix it." That difference is why this exists.
+1. **Failure diagnostics** — when a task is killed, you get a classified failure pattern with actionable fixes, not just "budget exceeded." This requires no extra LLM calls.
+2. **Compute efficiency on long-loop agents** — on SWE-bench search trees, monitoring reduces total nodes by 38.6% and wall time by 30% by terminating dead-end branches early.
 
-### Who should use this
+Validated across 3,175 runs (4 benchmarks, 5-condition ablation, multi-trial with bootstrap CIs). Zero false positives across 7 models including 4 local models via Ollama. Details in [Benchmarks](#benchmarks).
 
-- **Teams running search-tree agents** (MCTS, beam search) — the architecture behind SWE-bench solvers and tools like Devin. Branches, not loops, drive cost. A per-branch iteration cap looks fine in isolation; the tree-level cost explosion happens silently.
-- **Platform teams running 1,000+ agent tasks/day** — manual trace inspection doesn't scale. State-harness classifies failure patterns at the edge (zero cost, no LLM calls) and exports them as OpenTelemetry attributes for aggregate analysis.
-- **Researchers benchmarking agents** — the nondeterminism floor (~4–5% stdev on Gemini 2.5 Flash) means single-run comparisons with <8% delta are noise. State-harness quantifies this.
+### When to use this
 
-### Who should NOT use this
+- **Search-tree agents** (MCTS, beam search) where branches, not loops, drive cost. A per-branch cap looks fine in isolation; tree-level cost explosion happens silently.
+- **Platform teams at scale** — classifies failure patterns at the edge and exports them as OpenTelemetry attributes.
+- **Benchmarking** — the ~4–5% nondeterminism floor on Gemini 2.5 Flash means single-run deltas <8% are noise.
 
-- **Chatbots, RAG pipelines, or single-turn apps** — these don't spiral. You don't need monitoring.
-- **Simple ReAct loops with <10 turns** — `max_iterations=10` and a budget cap are sufficient. Every modern framework (LangGraph, CrewAI) supports this natively.
+You don't need this for chatbots, RAG pipelines, single-turn apps, or simple ReAct loops with <10 turns. `max_iterations` and a budget cap are sufficient there.
 
 ---
 
@@ -343,7 +335,7 @@ span.set_attributes(report.to_otel_attributes())
 
 ## Architecture
 
-State-harness combines three physics-inspired mechanisms, implemented in Rust for microsecond-speed enforcement:
+Three mechanisms, implemented in Rust (via PyO3):
 
 ```mermaid
 graph TD
@@ -358,8 +350,6 @@ graph TD
     style F fill:#1a1a1a,stroke:#555,color:#e8e8e8
     style B fill:#0d1117,stroke:#30363d,color:#e6edf3
 ```
-
-> All three mechanisms are implemented in Rust (via PyO3) for microsecond-speed enforcement.
 
 | Component | Purpose | Speed |
 |:---|:---|:---|
@@ -383,24 +373,17 @@ Evaluated across four complementary benchmarks with a **5-condition ablation stu
 | **D. Full-stack** | ✅ | ✅ | ✅ | + policy drift gating |
 | **E. Naive Cap** | — | — | — | Hard budget cap (control) |
 
-### Summary: Non-invasive monitoring with zero-cost diagnostics
+### Summary
 
 | Benchmark | Runs | Stability Trips | Cost Savings (D vs A) | Resolve-Rate Δ | Diagnostics |
 |:---|:---:|---:|---:|:---|:---:|
 | **MINT** (reasoning + coding) | 1,136 | 0 | ~0% | −0.7pp (noise) | N/A (no trips) |
 | **τ³-bench** (customer service) | 750 | 0 | 8.1% | within ±12pp nondeterminism | N/A (no trips) |
-| **SWE-bench Verified** (coding) | 333 + 148 | ~38% | 38.6% (nodes) | −3.6pp (within ±4–5% noise) | ✅ Pattern classification |
-| **Custom Local** (4 models) | 240 | 3 (true pos.) | 15.2% | 0pp | ✅ Pattern classification |
+| **SWE-bench Verified** (coding) | 333 + 148 | ~38% | 38.6% (nodes) | −3.6pp (within ±4–5% noise) | Pattern classification |
+| **Custom Local** (4 models) | 240 | 3 (true pos.) | 15.2% | 0pp | Pattern classification |
 | **MINT Local** (Qwen3:4B) | 568 | 0 | ~0% | +1.8pp | N/A (no trips) |
 
-**What the harness does — and doesn't do:**
-
-- ✅ **Never interferes with healthy agents** — zero stability trips across 1,886 short/medium-loop runs (MINT + τ³)
-- ✅ **Saves compute on spiraling tasks** — 38.6% fewer search nodes, 30% faster wall time on SWE-bench
-- ✅ **Tells you *why* tasks failed** — zero-cost failure diagnostics (context spiral, retry storm, policy drift) with actionable fixes
-- ⚠️ **Does not improve resolve rate** — multi-trial SWE-bench (333 runs) confirms: harness 40.5% ± 2.7% vs naive cap 45.9% ± 5.4% vs baseline 44.1% ± 4.1% — all within noise
-
-> A naive budget cap achieves comparable task success rates. The harness's unique value is **diagnostics** (understanding *why* failures happen) and **compute efficiency** (33% fewer nodes than naive cap).
+Resolve-rate differences across all benchmarks fall within LLM nondeterminism (~4–5% stdev). The monitor never trips on short/medium-loop tasks (1,886 runs). Savings concentrate on long-loop search-tree agents.
 
 ### SWE-bench Verified (central result)
 
@@ -417,13 +400,7 @@ Evaluated across four complementary benchmarks with a **5-condition ablation stu
 
 > **Note:** Single-trial resolve rates have ~±8pp standard error. E's apparent 56.8% is not statistically significant vs A's 40.5%. Multi-trial results below confirm this.
 
-**What the harness provides:**
-
-- **Compute-efficient:** 38.6% fewer search tree nodes than baseline, 33% fewer than naive cap
-- **Faster:** 30% wall-time reduction (80 → 56 min)
-- **Eliminates burnout:** Baseline had 7 tasks burning the full 50-node budget (all failed). With monitoring: **zero**
-- **Diagnostics:** Every tripped task gets a classified failure pattern with actionable fix suggestions — at zero LLM cost
-- **Simple integration:** Lyapunov monitoring alone (Condition B) delivers ~90% of total benefit — 5 lines of code
+Full-stack monitoring reduced total nodes by 38.6% (945 → 580) and wall time by 30% (80 → 56 min). Baseline had 7 tasks burning the full 50-node budget (all failed); with monitoring, zero tasks hit ceiling. Lyapunov monitoring alone (Condition B) delivers ~90% of the compute savings.
 
 **Ablation — each mechanism contributes independently:**
 
@@ -637,17 +614,7 @@ This library implements the framework described in:
 > Vishal Verma, 2026
 > [Read the full paper →](https://vishalvermalabs.com/papers/empirical-lyapunov-stability-agent-failure)
 
-Key findings from the paper (updated with multi-trial and local model validation):
-- **Non-invasiveness confirmed across 333 SWE-bench runs** — resolve rate delta (−3.6pp) falls within the ±4.1% nondeterminism band
-- **Zero stability violations** across 1,886 short/medium-loop cloud runs (MINT + τ³) — the monitor never interferes with healthy agents
-- **Zero false positives across 80 local-model harness runs** — spanning Llama 3.2:3B, Phi-4-Mini, Qwen3:4B, Gemma4:E4B on Apple M4 via Ollama
-- **Zero-cost failure diagnostics** — every tripped task is classified (context spiral, retry storm, policy drift) with actionable fix suggestions, requiring no additional LLM calls
-- **Lyapunov monitoring alone delivers ~90% of the total benefit** — the simplest integration (5 lines of `GrowthRatioGuard` code) captures the majority of the value
-- On long-loop agents (SWE-bench), full-stack monitoring reduces compute by 38.6% and wall time by 30%
-- Failed tasks cost **1.6–3.4× more** than successful ones — economic justification for early termination
-- Eliminates all max-budget burnout events (7 → 0 tasks hitting the 50-node ceiling on SWE-bench)
-- **~4–5% nondeterminism floor** established across both τ³-bench and SWE-bench — any single-run comparison is unreliable for deltas < 8%
-- **Small-model self-sabotage**: Naive turn-limiting outperforms unconstrained baselines by +17.5pp on average on ≤4B models — runtime governance is capability-preserving, not just cost-saving
+The paper covers the full 5-condition ablation, multi-trial validation, local-model results, and failure taxonomy. Key results are reproduced in [Benchmarks](#benchmarks) above.
 
 Based on the theoretical framework from:
 > **The Fluid Dynamics of Multi-Agent AI: Resolving d'Alembert's Paradox of Generative Workflows**
