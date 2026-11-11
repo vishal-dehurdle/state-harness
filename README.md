@@ -380,7 +380,7 @@ graph TD
 |:---|:---:|---:|---:|:---|:---:|
 | **MINT** (reasoning + coding) | 1,136 | 0 | ~0% | −0.7pp (noise) | N/A (no trips) |
 | **τ³-bench** (customer service) | 750 | 0 | 8.1% | −10pp (+2pp in an earlier run) | N/A (no trips) |
-| **SWE-bench Verified** (coding) | 333 + 148 | ~38% | 38.6% (nodes) | −4.5pp (not significant, p = 0.28) | Pattern classification |
+| **SWE-bench Verified** (coding) | 333 + 148 | 87 / 148 D runs (59%) | 38.6% (nodes) | −4.5pp (not significant, p = 0.28) | Pattern classification |
 | **Custom Local** (4 models) | 240 | 3 (true pos.) | 15.2% | 0pp | Pattern classification |
 | **MINT Local** (Qwen3:4B) | 568 | 0 | ~0% | +1.8pp | N/A (no trips) |
 
