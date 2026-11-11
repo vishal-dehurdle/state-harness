@@ -69,7 +69,7 @@ State-harness monitors token consumption relative to a warmup baseline via a [Ly
 
 ### Scope and limitations
 
-State-harness does not improve resolve rates — a naive budget cap achieves comparable task success ([multi-trial results below](#multi-trial-validation-333-runs)). The value is:
+State-harness does not improve resolve rates. Over three trials a naive budget cap resolved as many tasks or slightly more ([multi-trial results below](#multi-trial-validation-333-runs)). The value is:
 
 1. **Failure diagnostics** — classified failure patterns with actionable fixes, not just "budget exceeded." No extra LLM calls.
 2. **Compute efficiency on long loops** — 38.6% fewer search nodes and 30% less wall time on SWE-bench by terminating dead-end branches early.
@@ -80,7 +80,7 @@ Validated across 3,175 runs (4 benchmarks, 5-condition ablation, multi-trial wit
 
 - **Search-tree agents** (MCTS, beam search) — per-branch caps look fine in isolation; tree-level cost explosion is silent.
 - **Platform teams at scale** — failure classification at the edge, exported as OpenTelemetry attributes.
-- **Benchmarking** — the ~4–5% nondeterminism floor means single-run deltas <8% are noise.
+- **Benchmarking** — the ~4pp nondeterminism floor means single-run deltas <8% are noise.
 
 Not needed for chatbots, RAG, single-turn apps, or ReAct loops with <10 turns — `max_iterations` + budget cap suffice.
 
@@ -380,11 +380,11 @@ graph TD
 |:---|:---:|---:|---:|:---|:---:|
 | **MINT** (reasoning + coding) | 1,136 | 0 | ~0% | −0.7pp (noise) | N/A (no trips) |
 | **τ³-bench** (customer service) | 750 | 0 | 8.1% | within ±12pp nondeterminism | N/A (no trips) |
-| **SWE-bench Verified** (coding) | 333 + 148 | ~38% | 38.6% (nodes) | −3.6pp (within ±4–5% noise) | Pattern classification |
+| **SWE-bench Verified** (coding) | 333 + 148 | ~38% | 38.6% (nodes) | −4.5pp (not significant, p = 0.28) | Pattern classification |
 | **Custom Local** (4 models) | 240 | 3 (true pos.) | 15.2% | 0pp | Pattern classification |
 | **MINT Local** (Qwen3:4B) | 568 | 0 | ~0% | +1.8pp | N/A (no trips) |
 
-Resolve-rate deltas fall within LLM nondeterminism (~4–5% stdev). No trips on short/medium loops (1,886 runs). Savings concentrate on long-loop search trees.
+Resolve-rate deltas fall within LLM nondeterminism (~4pp stdev on SWE-bench, ±12pp on τ³-bench). No trips on short/medium loops (1,886 runs). Savings concentrate on long-loop search trees.
 
 ### SWE-bench Verified (central result)
 
@@ -415,19 +415,19 @@ Lyapunov alone delivers ~90% of the benefit. RG and VSA add incremental value.
 
 #### Multi-trial validation (333 runs)
 
-3 trials per condition (A, D, E) across all 37 instances — **333 total runs**. 12 runs stuck in Docker (28+ min), counted as failures:
+3 trials per condition (A, D, E) across all 37 instances — **333 total runs**. 12 runs hung in Docker (28+ min) without a logged result. Each run's result is taken from its evaluation record, which marks 5 of those 12 resolved; the other 7 count as failures:
 
 | Condition | Trial 1 | Trial 2 | Trial 3 | **Mean ± σ** |
 |:---|:---:|:---:|:---:|:---:|
-| **A. Baseline** | 18/37 (48.6%) | 16/37 (43.2%) | 15/37 (40.5%) | **44.1% ± 4.1%** |
-| **D. Full-stack** | 15/37 (40.5%) | 16/37 (43.2%) | 14/37 (37.8%) | **40.5% ± 2.7%** |
-| **E. Naive Cap** | 19/37 (51.4%) | 15/37 (40.5%) | 17/37 (45.9%) | **45.9% ± 5.4%** |
+| **A. Baseline** | 19/37 (51.4%) | 16/37 (43.2%) | 16/37 (43.2%) | **45.9% ± 4.7%** |
+| **D. Full-stack** | 15/37 (40.5%) | 17/37 (45.9%) | 14/37 (37.8%) | **41.4% ± 4.1%** |
+| **E. Naive Cap** | 19/37 (51.4%) | 17/37 (45.9%) | 17/37 (45.9%) | **47.7% ± 3.1%** |
 
-Cross-condition variance (2.9%) ≤ within-condition nondeterminism (4.1%). All differences fall within the noise band.
+Spread of condition means (3.3%) < within-condition nondeterminism (4.0%). A−D (−4.5pp) is about one stdev and not significant (Welch p = 0.28).
 
-> The ~4% within-condition stdev converges with τ³-bench (±4.6%), establishing a ~4–5% nondeterminism floor for Gemini 2.5 Flash on code tasks. Single-run deltas <8% are unreliable.
+> The ~4% within-condition stdev is larger than the trial-to-trial spread on τ³-bench (1.2–5.0pp by condition). Single-run deltas <8% are unreliable.
 
-Bootstrap CIs (10,000 resamples) and Welch's t-tests: A−D = +3.6pp [−0.9, +8.1], p ≈ 0.17; A−E = −1.8pp [−8.1, +4.5], p ≈ 0.68; D−E = −5.4pp [−10.8, 0.0], p ≈ 0.09. Full analysis in [paper §7.3.1](https://vishalvermalabs.com/papers/empirical-lyapunov-stability-agent-failure).
+Bootstrap CIs (10,000 resamples) and Welch's t-tests: A−D = +4.5pp [−0.9, +9.9], p ≈ 0.28; A−E = −1.8pp [−6.3, +3.6], p ≈ 0.61; D−E = −6.3pp [−10.8, −1.8], p ≈ 0.11. D−E is the one gap whose bootstrap CI excludes zero: a possible small cost of full-stack monitoring relative to a naive cap, which more trials should test. Full analysis in [paper §7.3.1](https://vishalvermalabs.com/papers/empirical-lyapunov-stability-agent-failure).
 
 ### τ³-bench Airline (non-invasiveness confirmation)
 
@@ -444,7 +444,7 @@ Bootstrap CIs (10,000 resamples) and Welch's t-tests: A−D = +3.6pp [−0.9, +8
 **Key findings:**
 
 - **Zero stability trips across 750 runs.** All airline tasks classified as stable; no interventions.
-- **Pass-rate variance is nondeterminism.** Naive cap (E, zero monitoring) drops −16pp from baseline — *worse* than full-stack (D, −10pp). The ~10–16pp spread is intrinsic variance.
+- **Pass-rate variance is nondeterminism.** Naive cap (E, zero monitoring) drops −18pp from baseline — *worse* than full-stack (D, −10pp). The ~10–18pp spread is intrinsic variance.
 - **25% of tasks flip pass/fail** within the same condition across trials (~±12pp nondeterminism floor).
 - **8.1% cost savings** from passive monitoring (zero interventions).
 
@@ -556,7 +556,7 @@ See [benchmarks/](benchmarks/) for setup, configs, and reproduction instructions
 
 ### Future evaluations
 
-- [x] **Multi-trial SWE-bench** — 333 runs (3 trials × 3 conditions × 37 instances) confirming non-invasiveness within ±4% noise band
+- [x] **Multi-trial SWE-bench** — 333 runs (3 trials × 3 conditions × 37 instances) finding no significant resolve-rate change from monitoring (A−D −4.5pp, p = 0.28)
 - [x] **Local model validation** — 240 runs across 4 open-weight models (Llama, Phi, Qwen, Gemma) + 568 MINT runs on Qwen3:4B
 - [ ] **Terminal-Bench** — Terminal-based agent tasks; command-line tool loops where spirals manifest as repeated failed commands
 - [ ] **SWE-bench Pro** — Harder, contamination-resistant variant of SWE-bench
