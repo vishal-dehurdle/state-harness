@@ -74,7 +74,7 @@ State-harness does not improve resolve rates. Over three trials a naive budget c
 1. **Failure diagnostics** — classified failure patterns with actionable fixes, not just "budget exceeded." No extra LLM calls.
 2. **Compute efficiency on long loops** — 38.6% fewer search nodes and 30% less wall time on SWE-bench by terminating dead-end branches early.
 
-Validated across 3,175 runs (4 benchmarks, 5-condition ablation, multi-trial with bootstrap CIs). Zero false positives across 7 models incl. 4 local via Ollama. Details in [Benchmarks](#benchmarks).
+Validated across 3,175 runs (4 benchmarks, 5-condition ablation, multi-trial with bootstrap CIs). Zero false positives in 80 harness runs on 4 local models via Ollama. On SWE-bench (Gemini 2.5 Flash), 10 of the 25 tasks full-stack monitoring stopped had been resolved by the baseline; it still resolved 7 of them. Details in [Benchmarks](#benchmarks).
 
 ### When to use this
 
@@ -483,7 +483,7 @@ Failed tasks cost disproportionately more:
 
 **Key findings:**
 
-- **Zero false positives across 80 harness runs** — 4 model families, 3 difficulty tiers. Growth-ratio generalizes without threshold retuning.
+- **Zero false positives across 80 harness runs** — 4 model families, 3 difficulty tiers, same threshold for all. The monitor tripped 3 times, all on Llama 3.2:3B and all on tasks the baseline also failed; it never tripped on the other three models.
 - **Small-model self-sabotage:** Naive cap beats baseline by +17.5pp avg (+12.5pp median). Small models solve early turns correctly, then destroy solutions in later turns. Strongest on Gemma4:E4B (+35pp).
 - **Model-family behavioral signatures:**
   - *Llama 3.2:3B:* Classic spirals (ratios: 2.3×, 5.9×, 7.6×) — 3 true-positive trips
@@ -560,7 +560,7 @@ See [benchmarks/](benchmarks/) for setup, configs, and reproduction instructions
 - [x] **Local model validation** — 240 runs across 4 open-weight models (Llama, Phi, Qwen, Gemma) + 568 MINT runs on Qwen3:4B
 - [ ] **Terminal-Bench** — Terminal-based agent tasks; command-line tool loops where spirals manifest as repeated failed commands
 - [ ] **SWE-bench Pro** — Harder, contamination-resistant variant of SWE-bench
-- [x] **Cross-model validation** — 7 models total: GPT-4o-mini, Claude Haiku 4.5, Gemini 2.5 Flash + Llama 3.2:3B, Phi-4-Mini, Qwen3:4B, Gemma4:E4B
+- [x] **Cross-model validation** — full runs on Gemini 2.5 Flash + Llama 3.2:3B, Phi-4-Mini, Qwen3:4B, Gemma4:E4B; GPT-4o-mini and Claude Haiku 4.5 smoke-tested only (8 runs, no trips, 0 of 2 spirals caught)
 
 ### Known limitations
 
@@ -651,7 +651,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup, code style, and PR guideli
 - [ ] **Adaptive threshold** — Auto-tune τ based on task complexity signal from early turns
 - [ ] **Causal intervention** — Instead of killing spiraling tasks, redirect them (prompt injection, tool restriction)
 - [ ] **Streaming support** — Token-level monitoring for streaming LLM responses
-- [x] **Multi-model validation** — 7 models validated: GPT-4o-mini, Claude Haiku 4.5, Gemini 2.5 Flash + 4 local models via Ollama
+- [x] **Multi-model validation** — Gemini 2.5 Flash + 4 local models via Ollama; GPT-4o-mini and Claude Haiku 4.5 smoke-tested only (8 runs)
 - [ ] **Dashboard / observability** — Optional lightweight UI for monitoring energy trajectories in real-time
 
 ---
