@@ -47,7 +47,7 @@ from state_harness.diagnostics import (
     Suggestion,
 )
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 __all__ = [
     # Core engine classes (from Rust _core)

@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-11-11
+
+### Changed
+- **README figures corrected to match the published paper** (no code changes):
+  - Multi-trial SWE-bench results now come from the evaluation records: A 45.9% ± 4.7, D 41.4% ± 4.1, E 47.7% ± 3.1; A−D −4.5pp, not significant (p = 0.28).
+  - SWE-bench stability trips: 87 of 148 full-stack runs (59%), replacing ~38%.
+  - τ³-bench: 24–34% of tasks (28% on average) have mixed pass/fail outcomes across trials; the unsourced ±4.6% and ±12pp noise figures are replaced with measured re-run spreads.
+  - Zero false positives now refers to the 80 local-model harness runs. GPT-4o-mini and Claude Haiku 4.5 are listed as smoke-tested only. On SWE-bench, 10 of the 25 tasks full-stack monitoring stopped had been resolved by the baseline.
+
+### Fixed
+- Release workflow: install Python 3.10, 3.11 and 3.12 on every wheel-build runner, so the Windows wheels build again.
+- `state_harness.__version__` now matches the package version (the 0.3.0 wheels reported 0.2.0).
+
 ## [0.3.0] - 2026-06-01
 
 ### Added
