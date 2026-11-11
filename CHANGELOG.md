@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CrewAICallback**: Drop-in callback adapter for CrewAI crews. Hooks into `step_callback` and `task_callback` for automatic monitoring.
 - **CLI tool**: `state-harness check` for live monitoring and `state-harness report` for post-mortem analysis from JSON telemetry files.
 - **Adaptive ratio threshold**: Auto-calibrates growth ratio threshold from warmup variance using Tukey's fence method (`τ = 1 + k × IQR/median`), eliminating per-domain manual tuning.
-- **Cross-model validation**: Verified zero false positives across 5 model families (Gemini 2.5 Flash, Llama 3.2:3B, Phi-4-Mini, Qwen3:4B, Gemma4:E4B).
+- **Cross-model validation**: Verified zero false positives in 80 harness runs on 4 local model families (Llama 3.2:3B, Phi-4-Mini, Qwen3:4B, Gemma4:E4B).
 - **Custom local-model benchmark battery**: 808 runs across 4 open-weight models on consumer hardware via Ollama. Revealed small-model self-sabotage pattern (+17.5pp naive-cap advantage).
 - **MINT benchmark integration**: 1,136 runs across 4 MINT subsets (GSM8K, MATH, HumanEval, MBPP) with Gemini 2.5 Flash and Qwen3:4B.
 - **OpenTelemetry export**: `FailureReport.to_otel_attributes()` for structured observability integration.
