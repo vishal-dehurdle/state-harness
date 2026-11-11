@@ -379,12 +379,12 @@ graph TD
 | Benchmark | Runs | Stability Trips | Cost Savings (D vs A) | Resolve-Rate Δ | Diagnostics |
 |:---|:---:|---:|---:|:---|:---:|
 | **MINT** (reasoning + coding) | 1,136 | 0 | ~0% | −0.7pp (noise) | N/A (no trips) |
-| **τ³-bench** (customer service) | 750 | 0 | 8.1% | within ±12pp nondeterminism | N/A (no trips) |
+| **τ³-bench** (customer service) | 750 | 0 | 8.1% | −10pp (+2pp in an earlier run) | N/A (no trips) |
 | **SWE-bench Verified** (coding) | 333 + 148 | ~38% | 38.6% (nodes) | −4.5pp (not significant, p = 0.28) | Pattern classification |
 | **Custom Local** (4 models) | 240 | 3 (true pos.) | 15.2% | 0pp | Pattern classification |
 | **MINT Local** (Qwen3:4B) | 568 | 0 | ~0% | +1.8pp | N/A (no trips) |
 
-Resolve-rate deltas fall within LLM nondeterminism (~4pp stdev on SWE-bench, ±12pp on τ³-bench). No trips on short/medium loops (1,886 runs). Savings concentrate on long-loop search trees.
+Resolve-rate deltas fall within LLM nondeterminism (~4pp stdev on SWE-bench; up to 10pp between identical re-runs on τ³-bench). No trips on short/medium loops (1,886 runs). Savings concentrate on long-loop search trees.
 
 ### SWE-bench Verified (central result)
 
@@ -445,7 +445,7 @@ Bootstrap CIs (10,000 resamples) and Welch's t-tests: A−D = +4.5pp [−0.9, +9
 
 - **Zero stability trips across 750 runs.** All airline tasks classified as stable; no interventions.
 - **Pass-rate variance is nondeterminism.** Naive cap (E, zero monitoring) drops −18pp from baseline — *worse* than full-stack (D, −10pp). The ~10–18pp spread is intrinsic variance.
-- **25% of tasks flip pass/fail** within the same condition across trials (~±12pp nondeterminism floor).
+- **24–34% of tasks flip pass/fail** within the same condition across trials (28% on average). Across three identical runs the baseline's majority pass rate was 70%, 62% and 60%, and D−A was −10pp in this run and +2pp in an earlier one.
 - **8.1% cost savings** from passive monitoring (zero interventions).
 
 ### MINT (non-invasiveness validation)
